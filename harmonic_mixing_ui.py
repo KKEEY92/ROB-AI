@@ -1,9 +1,11 @@
 import customtkinter
 import tkinter
 from tkinter import filedialog, messagebox
+from PIL import Image
 import analysis_engine as engine
 import threading
 import time
+import os
 
 # Set the theme and color scheme for the application
 customtkinter.set_appearance_mode("Dark")
@@ -17,6 +19,9 @@ class App(customtkinter.CTk):
         self.music_files = []
         self.analyzed_data = []
         self.selected_track_path = None
+        self.waveform_cache_dir = "waveform_cache"
+        if not os.path.exists(self.waveform_cache_dir):
+            os.makedirs(self.waveform_cache_dir)
 
         # --- Configure the main window ---
         self.title("Harmonic Mixing Studio")
@@ -103,8 +108,11 @@ class App(customtkinter.CTk):
             widget.destroy()
 
         # Create Header
-        headers = ["Track Name", "BPM", "Key"]
+        headers = ["Track Name", "BPM", "Key", "Waveform"]
+        column_weights = [2, 1, 1, 4] # Adjust column weights
+
         for i, header in enumerate(headers):
+            self.track_list_frame.grid_columnconfigure(i, weight=column_weights[i])
             header_label = customtkinter.CTkLabel(self.track_list_frame, text=header, font=customtkinter.CTkFont(weight="bold"))
             header_label.grid(row=0, column=i, padx=10, pady=5, sticky="w")
 
@@ -117,19 +125,21 @@ class App(customtkinter.CTk):
 
             bpm = "--"
             key = "--"
+            waveform_path = None
             is_analyzed = file_path in analyzed_map
 
             if is_analyzed:
                 track_data = analyzed_map[file_path]
                 bpm = track_data.get('bpm', '--')
                 key = track_data.get('camelot_key', '--')
+                waveform_path = track_data.get('waveform_path')
 
             # --- Create a frame for each track row for selection highlighting ---
             track_frame = customtkinter.CTkFrame(self.track_list_frame, corner_radius=5)
-            track_frame.grid(row=i + 1, column=0, columnspan=3, padx=5, pady=2, sticky="ew")
-            track_frame.grid_columnconfigure(0, weight=3)
-            track_frame.grid_columnconfigure(1, weight=1)
-            track_frame.grid_columnconfigure(2, weight=1)
+            track_frame.grid(row=i + 1, column=0, columnspan=4, padx=5, pady=2, sticky="ew")
+            for j, weight in enumerate(column_weights):
+                track_frame.grid_columnconfigure(j, weight=weight)
+
 
             # Change background color if selected
             if self.selected_track_path == file_path:
@@ -145,6 +155,19 @@ class App(customtkinter.CTk):
 
             key_label = customtkinter.CTkLabel(track_frame, text=key, anchor="w")
             key_label.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
+
+            # --- Display Waveform ---
+            if waveform_path and os.path.exists(waveform_path):
+                try:
+                    img = Image.open(waveform_path)
+                    ctk_img = customtkinter.CTkImage(light_image=img, dark_image=img, size=(240, 32))
+                    waveform_label = customtkinter.CTkLabel(track_frame, image=ctk_img, text="")
+                    waveform_label.grid(row=0, column=3, padx=10, pady=2, sticky="w")
+                except Exception:
+                    # If image fails to load, show a placeholder
+                    placeholder = customtkinter.CTkLabel(track_frame, text="Error", anchor="w")
+                    placeholder.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
+
 
     def track_selected(self, file_path):
         """Handles the event when a track is selected from the list."""
@@ -207,7 +230,16 @@ class App(customtkinter.CTk):
             if bpm and key:
                 camelot_key = engine.get_camelot_key(key)
                 if camelot_key:
-                    track_info = {'path': file_path, 'bpm': round(bpm), 'camelot_key': camelot_key}
+                    # Generate waveform image
+                    waveform_path = os.path.join(self.waveform_cache_dir, f"{file_path.stem}.png")
+                    engine.generate_waveform_image(file_path, waveform_path)
+
+                    track_info = {
+                        'path': file_path,
+                        'bpm': round(bpm),
+                        'camelot_key': camelot_key,
+                        'waveform_path': waveform_path
+                    }
                     self.analyzed_data.append(track_info)
                     engine.write_metadata_to_file(file_path, bpm, camelot_key)
 

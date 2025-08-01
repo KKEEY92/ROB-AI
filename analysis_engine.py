@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 import librosa
 from mutagen.easyid3 import EasyID3
+import matplotlib.pyplot as plt
+import numpy as np
 
 # --- 1. KONFIGURATION ---
 
@@ -111,3 +113,37 @@ def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max
         return playlist_filename
     except Exception:
         return None
+
+def generate_waveform_image(file_path: Path, image_path: Path, color: str = "#1f6aa5"):
+    """Generates a simple waveform image from an audio file."""
+    try:
+        # Load audio file with a low sample rate for performance
+        y, sr = librosa.load(str(file_path), sr=11025, duration=180)
+
+        # Create a plot with a specific size and transparent background
+        fig, ax = plt.subplots(figsize=(6, 0.8), dpi=100)
+        fig.patch.set_alpha(0)
+        ax.patch.set_alpha(0)
+
+        # Plot the waveform
+        ax.plot(y, color=color, linewidth=0.5)
+
+        # Fill under the plot
+        ax.fill_between(range(len(y)), y, color=color, alpha=0.5)
+
+        # Remove all axes, labels, and ticks for a clean look
+        ax.axis('off')
+        ax.margins(0)
+
+        # Ensure tight layout
+        plt.tight_layout(pad=0)
+
+        # Save the figure
+        plt.savefig(image_path, format='png', bbox_inches='tight', pad_inches=0, transparent=True)
+
+        # Close the plot to free memory
+        plt.close(fig)
+
+        return True
+    except Exception:
+        return False
