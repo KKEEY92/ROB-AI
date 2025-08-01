@@ -102,6 +102,11 @@ class App(customtkinter.CTk):
         self.track_list_frame = customtkinter.CTkScrollableFrame(self.content_pane, label_text="Track Collection")
         self.track_list_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 
+        # --- Create a scrollable frame for the PLAYLIST list ---
+        self.playlist_list_frame = customtkinter.CTkScrollableFrame(self.content_pane)
+        self.playlist_list_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+        self.playlist_list_frame.grid_remove() # Hide it by default
+
         # --- Status Label ---
         self.status_label = customtkinter.CTkLabel(self, text="Load a folder to begin.", anchor="w")
         self.status_label.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
