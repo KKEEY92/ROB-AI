@@ -19,6 +19,7 @@ class App(customtkinter.CTk):
         self.library_file = "library.json"
         self.library_data = {"collection": [], "playlists": {}}
         self.selected_track_path = None
+        self.selected_playlist_name = None
         self.waveform_cache_dir = "waveform_cache"
         if not os.path.exists(self.waveform_cache_dir):
             os.makedirs(self.waveform_cache_dir)
@@ -72,8 +73,11 @@ class App(customtkinter.CTk):
         self.collection_button = customtkinter.CTkButton(self.nav_pane, text="Track Collection", command=self.show_track_collection, corner_radius=5)
         self.collection_button.pack(pady=5, padx=10, fill="x")
 
-        self.playlists_button = customtkinter.CTkButton(self.nav_pane, text="Playlists", state="disabled", corner_radius=5)
+        self.playlists_button = customtkinter.CTkButton(self.nav_pane, text="Playlists", command=self.show_playlists_view, corner_radius=5)
         self.playlists_button.pack(pady=5, padx=10, fill="x")
+
+        self.delete_playlist_button = customtkinter.CTkButton(self.nav_pane, text="Delete Playlist", state="disabled", command=self.delete_selected_playlist, fg_color="transparent", border_color="#ff4d4d", border_width=1, hover_color="#ff4d4d")
+        self.delete_playlist_button.pack(pady=(10,5), padx=10, fill="x")
 
         # --- Content Pane (for the track list) ---
         self.content_pane = customtkinter.CTkFrame(self.main_content_frame, corner_radius=5)
@@ -201,21 +205,80 @@ class App(customtkinter.CTk):
         self.update_track_list_display(self.library_data["collection"])
 
     def create_playlist(self):
-        """Creates a harmonic playlist starting with the selected track."""
+        """Prompts for a playlist name and saves the new harmonic playlist."""
         if not self.selected_track_path:
+            messagebox.showwarning("Warning", "Please select a starting track first.")
             return
 
-        self.status_label.configure(text="Creating playlist...")
+        dialog = customtkinter.CTkInputDialog(text="Enter a name for the new playlist:", title="Create Playlist")
+        playlist_name = dialog.get_input()
 
-        # Pass the entire collection to the playlist function
-        playlist_file = engine.create_harmonic_playlist(self.library_data["collection"], self.selected_track_path)
+        if not playlist_name:
+            return # User cancelled
 
-        if playlist_file:
-            self.status_label.configure(text=f"Playlist created: {playlist_file}")
-            messagebox.showinfo("Playlist Created", f"Successfully created playlist:\n{playlist_file}")
+        self.status_label.configure(text=f"Creating playlist '{playlist_name}'...")
+
+        # Generate the ordered list of tracks
+        new_playlist_tracks = engine.create_harmonic_playlist(self.library_data["collection"], self.selected_track_path)
+
+        if new_playlist_tracks:
+            # Save the playlist to the library
+            self.library_data["playlists"][playlist_name] = new_playlist_tracks
+            self.save_app_library()
+
+            # Export to .m3u file
+            engine.export_playlist_to_m3u(playlist_name, new_playlist_tracks)
+
+            self.status_label.configure(text=f"Playlist '{playlist_name}' created and saved.")
+            messagebox.showinfo("Success", f"Playlist '{playlist_name}' was created and saved.")
+            self.update_playlists_display() # Refresh the playlist view
         else:
             self.status_label.configure(text="Failed to create playlist.")
-            messagebox.showerror("Error", "Could not create the playlist.")
+            messagebox.showerror("Error", "Could not create the harmonic playlist.")
+
+    def update_playlists_display(self):
+        """Clears and redraws the list of playlists in the UI."""
+        for widget in self.playlist_list_frame.winfo_children():
+            widget.destroy()
+
+        header_label = customtkinter.CTkLabel(self.playlist_list_frame, text="Playlists", font=customtkinter.CTkFont(size=16, weight="bold"))
+        header_label.pack(anchor="w", padx=10, pady=5)
+
+        for playlist_name in self.library_data["playlists"].keys():
+            button = customtkinter.CTkButton(self.playlist_list_frame, text=playlist_name, fg_color="transparent", anchor="w",
+                                             command=lambda name=playlist_name: self.show_playlist_content(name))
+            button.pack(fill="x", padx=5)
+
+    def show_playlist_content(self, playlist_name: str):
+        """Displays the tracks for a selected playlist."""
+        self.track_list_frame.configure(label_text=f"Playlist: {playlist_name}")
+
+        self.selected_playlist_name = playlist_name
+        self.delete_playlist_button.configure(state="normal")
+
+        playlist_tracks = self.library_data["playlists"].get(playlist_name, [])
+
+        self.update_track_list_display(playlist_tracks)
+        self.track_list_frame.grid()
+        self.playlist_list_frame.grid_remove()
+
+    def delete_selected_playlist(self):
+        """Deletes the currently selected playlist after confirmation."""
+        if not self.selected_playlist_name:
+            return
+
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete the playlist '{self.selected_playlist_name}'?\nThis cannot be undone.")
+
+        if confirm:
+            if self.selected_playlist_name in self.library_data["playlists"]:
+                del self.library_data["playlists"][self.selected_playlist_name]
+                self.save_app_library()
+                self.status_label.configure(text=f"Deleted playlist: {self.selected_playlist_name}")
+                self.selected_playlist_name = None
+                self.delete_playlist_button.configure(state="disabled")
+                self.update_playlists_display()
+            else:
+                messagebox.showerror("Error", "Could not find the selected playlist to delete.")
 
 
     def start_analysis_thread(self):

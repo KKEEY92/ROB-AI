@@ -133,8 +133,8 @@ def load_library(file_path: str) -> Dict[str, Any]:
         # If file doesn't exist or is empty/corrupt, return a default structure
         return {"collection": [], "playlists": {}}
 
-def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max_bpm_diff: int = 5) -> Optional[str]:
-    """Erstellt eine harmonische Playlist und gibt den Dateipfad zurück."""
+def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max_bpm_diff: int = 5) -> Optional[List[Dict]]:
+    """Erstellt eine harmonische Playlist und gibt die sortierte Track-Liste zurück."""
     start_track = next((t for t in all_tracks if t['path'] == start_track_path), None)
     if not start_track or not start_track.get('camelot_key'):
         return None
@@ -159,17 +159,26 @@ def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max
         remaining_tracks.remove(next_track)
         current_track = next_track
 
-    playlist_filename = f"Harmonic Mix (starting with {start_track['path'].stem}).m3u"
+    return playlist
+
+def export_playlist_to_m3u(playlist_name: str, tracks: List[Dict]) -> bool:
+    """Exportiert eine Track-Liste in eine .m3u-Datei."""
+    # Sanitize playlist name for use as a filename
+    safe_filename = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+    if not safe_filename:
+        safe_filename = "Untitled Playlist"
+    playlist_filename = f"{safe_filename}.m3u"
+
     try:
         with open(playlist_filename, 'w', encoding='utf-8') as f:
             f.write("#EXTM3U\n")
-            for track in playlist:
+            for track in tracks:
                 title = track['path'].stem
                 f.write(f"#EXTINF:-1,{title}\n")
                 f.write(str(track['path'].resolve()) + '\n')
-        return playlist_filename
+        return True
     except Exception:
-        return None
+        return False
 
 def generate_waveform_image(file_path: Path, image_path: Path, color: str = "#1f6aa5"):
     """Generates a simple waveform image from an audio file."""
