@@ -5,6 +5,7 @@
 
 import os
 from pathlib import Path
+from typing import Optional, List, Tuple
 import librosa
 from mutagen.easyid3 import EasyID3
 
@@ -24,7 +25,7 @@ SIMPLE_CAMELOT_MAP = {
 
 # --- 2. FUNKTIONEN ---
 
-def find_music_files(music_folder: str) -> list[Path]:
+def find_music_files(music_folder: str) -> List[Path]:
     """Durchsucht einen Ordner rekursiv nach unterstützten Audiodateien."""
     found_files = []
     print(f"INFO: Durchsuche den Ordner: {music_folder}")
@@ -35,7 +36,7 @@ def find_music_files(music_folder: str) -> list[Path]:
     print(f"INFO: {len(found_files)} Musikdateien gefunden!")
     return found_files
 
-def analyze_track(file_path: Path) -> tuple[float | None, str | None]:
+def analyze_track(file_path: Path) -> Tuple[Optional[float], Optional[str]]:
     """Analysiert eine Audiodatei, um BPM und Tonart zu ermitteln."""
     try:
         y, sr = librosa.load(str(file_path), duration=120)  # Lade die ersten 2 Minuten für schnellere Analyse
@@ -57,11 +58,11 @@ def analyze_track(file_path: Path) -> tuple[float | None, str | None]:
         print(f"WARNUNG: Fehler bei der Analyse von '{file_path.name}': {e}")
         return None, None
 
-def get_camelot_key(key: str) -> str | None:
+def get_camelot_key(key: str) -> Optional[str]:
     """Übersetzt eine Tonart in einen Camelot-Code."""
     return SIMPLE_CAMELOT_MAP.get(key)
 
-def get_compatible_keys(camelot_key: str) -> list[str]:
+def get_compatible_keys(camelot_key: str) -> List[str]:
     """Ermittelt harmonisch kompatible Tonarten basierend auf dem Camelot-Rad."""
     if not camelot_key:
         return []
@@ -115,7 +116,7 @@ def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str):
 
 # --- 3. PLAYLIST-ERSTELLUNG ---
 
-def create_harmonic_playlist(all_tracks: list[dict], start_track_path: Path, max_bpm_diff: int = 5):
+def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max_bpm_diff: int = 5):
     """Erstellt eine harmonische Playlist basierend auf einem Start-Track."""
 
     start_track = next((t for t in all_tracks if t['path'] == start_track_path), None)
