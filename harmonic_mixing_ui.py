@@ -109,8 +109,18 @@ class App(customtkinter.CTk):
 
     def show_track_collection(self):
         """Updates the view to show the main track collection."""
-        self.track_list_frame.configure(label_text="Track Collection")
+        self.track_list_frame.grid()
+        self.playlist_list_frame.grid_remove()
+        self.delete_playlist_button.configure(state="disabled")
+        self.selected_playlist_name = None
         self.update_track_list_display(self.library_data["collection"])
+
+    def show_playlists_view(self):
+        """Updates the view to show the list of playlists."""
+        self.track_list_frame.grid_remove()
+        self.playlist_list_frame.grid()
+        self.update_playlists_display()
+        self.status_label.configure(text="Playlists view. Select a playlist to view its content.")
 
 
     def load_folder(self):
