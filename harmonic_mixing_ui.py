@@ -23,8 +23,6 @@ class App(customtkinter.CTk):
         if not os.path.exists(self.waveform_cache_dir):
             os.makedirs(self.waveform_cache_dir)
 
-        self.load_app_library()
-
         # --- Configure the main window ---
         self.title("Harmonic Mixing Studio")
         self.geometry("1200x600")
@@ -91,7 +89,8 @@ class App(customtkinter.CTk):
         self.status_label = customtkinter.CTkLabel(self, text="Load a folder to begin.", anchor="w")
         self.status_label.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
 
-        # Initial display update
+        # --- Load initial data and display it ---
+        self.load_app_library()
         self.show_track_collection()
 
     def load_app_library(self):
