@@ -1,6 +1,7 @@
 import os
+import json
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 import librosa
 from mutagen.easyid3 import EasyID3
 import matplotlib.pyplot as plt
@@ -90,6 +91,47 @@ def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str) -> boo
         return True
     except Exception:
         return False
+
+# --- 3. LIBRARY PERSISTENCE ---
+
+def save_library(library_data: Dict[str, Any], file_path: str):
+    """Saves the library data to a JSON file."""
+    try:
+        # Convert Path objects to strings for JSON serialization
+        def convert_paths_to_strings(obj):
+            if isinstance(obj, list):
+                return [convert_paths_to_strings(item) for item in obj]
+            if isinstance(obj, dict):
+                return {k: convert_paths_to_strings(v) for k, v in obj.items()}
+            if isinstance(obj, Path):
+                return str(obj)
+            return obj
+
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(convert_paths_to_strings(library_data), f, indent=4)
+        return True
+    except Exception:
+        return False
+
+def load_library(file_path: str) -> Dict[str, Any]:
+    """Loads the library data from a JSON file."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            library_data = json.load(f)
+
+        # Convert string paths back to Path objects
+        def convert_strings_to_paths(obj):
+            if isinstance(obj, list):
+                return [convert_strings_to_paths(item) for item in obj]
+            if isinstance(obj, dict):
+                # Specifically look for a 'path' key to convert
+                return {k: Path(v) if k == 'path' else convert_strings_to_paths(v) for k, v in obj.items()}
+            return obj
+
+        return convert_strings_to_paths(library_data)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If file doesn't exist or is empty/corrupt, return a default structure
+        return {"collection": [], "playlists": {}}
 
 def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max_bpm_diff: int = 5) -> Optional[str]:
     """Erstellt eine harmonische Playlist und gibt den Dateipfad zurück."""

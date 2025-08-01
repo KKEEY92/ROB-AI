@@ -16,12 +16,14 @@ class App(customtkinter.CTk):
         super().__init__()
 
         # --- Instance variables ---
-        self.music_files = []
-        self.analyzed_data = []
+        self.library_file = "library.json"
+        self.library_data = {"collection": [], "playlists": {}}
         self.selected_track_path = None
         self.waveform_cache_dir = "waveform_cache"
         if not os.path.exists(self.waveform_cache_dir):
             os.makedirs(self.waveform_cache_dir)
+
+        self.load_app_library()
 
         # --- Configure the main window ---
         self.title("Harmonic Mixing Studio")
@@ -31,78 +33,110 @@ class App(customtkinter.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # --- Create a sidebar frame for controls ---
-        self.sidebar_frame = customtkinter.CTkFrame(self, width=180, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(5, weight=1)
+        # --- Create a top-level frame for controls ---
+        self.control_frame = customtkinter.CTkFrame(self, height=80)
+        self.control_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
-        # --- Add a title label to the sidebar ---
-        self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="Controls", font=customtkinter.CTkFont(size=20, weight="bold"))
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+        self.add_folder_button = customtkinter.CTkButton(self.control_frame, text="Load Music Folder", command=self.load_folder)
+        self.add_folder_button.pack(side="left", padx=10, pady=10)
 
-        # --- Add control buttons to the sidebar ---
-        self.add_folder_button = customtkinter.CTkButton(self.sidebar_frame, text="Load Music Folder", command=self.load_folder)
-        self.add_folder_button.grid(row=1, column=0, padx=20, pady=10)
+        self.analyze_button = customtkinter.CTkButton(self.control_frame, text="Analyze Tracks", state="disabled", command=self.start_analysis_thread)
+        self.analyze_button.pack(side="left", padx=10, pady=10)
 
-        self.analyze_button = customtkinter.CTkButton(self.sidebar_frame, text="Analyze Tracks", state="disabled", command=self.start_analysis_thread)
-        self.analyze_button.grid(row=2, column=0, padx=20, pady=10)
+        self.playlist_button = customtkinter.CTkButton(self.control_frame, text="Create Playlist", state="disabled", command=self.create_playlist)
+        self.playlist_button.pack(side="left", padx=10, pady=10)
 
-        self.playlist_button = customtkinter.CTkButton(self.sidebar_frame, text="Create Playlist", state="disabled", command=self.create_playlist)
-        self.playlist_button.grid(row=3, column=0, padx=20, pady=10)
-
-        # --- Add a progress bar ---
-        self.progress_bar = customtkinter.CTkProgressBar(self.sidebar_frame, orientation="horizontal")
+        # --- Progress Bar and Labels ---
+        self.progress_bar = customtkinter.CTkProgressBar(self.control_frame, orientation="horizontal")
         self.progress_bar.set(0)
-        self.progress_bar.grid(row=4, column=0, padx=20, pady=(10, 10))
+        self.progress_bar.pack(side="right", fill="x", expand=True, padx=10, pady=10)
+
+        self.progress_details_label = customtkinter.CTkLabel(self.control_frame, text="", anchor="e")
+        self.progress_details_label.pack(side="right", padx=10)
+
+        self.eta_label = customtkinter.CTkLabel(self.control_frame, text="", anchor="e")
+        self.eta_label.pack(side="right", padx=10)
 
 
-        # --- Create a scrollable frame for the track list ---
-        self.track_list_frame = customtkinter.CTkScrollableFrame(self, label_text="Track List")
-        self.track_list_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-        self.track_list_frame.grid_columnconfigure(0, weight=3) # Track name
-        self.track_list_frame.grid_columnconfigure(1, weight=1) # BPM
-        self.track_list_frame.grid_columnconfigure(2, weight=1) # Key
+        # --- Create the main content layout (Navigation + Track List) ---
+        self.main_content_frame = customtkinter.CTkFrame(self)
+        self.main_content_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+        self.grid_rowconfigure(1, weight=1)
+        self.main_content_frame.grid_columnconfigure(1, weight=1)
 
-        # --- Detailed Progress Labels ---
-        self.progress_details_label = customtkinter.CTkLabel(self.sidebar_frame, text="", wraplength=160)
-        self.progress_details_label.grid(row=5, column=0, padx=20, pady=(0, 0))
+        # --- Navigation Pane ---
+        self.nav_pane = customtkinter.CTkFrame(self.main_content_frame, width=200, corner_radius=5)
+        self.nav_pane.grid(row=0, column=0, padx=10, pady=10, sticky="nsw")
 
-        self.eta_label = customtkinter.CTkLabel(self.sidebar_frame, text="", wraplength=160)
-        self.eta_label.grid(row=6, column=0, padx=20, pady=(0, 0))
+        self.nav_label = customtkinter.CTkLabel(self.nav_pane, text="Library", font=customtkinter.CTkFont(size=18, weight="bold"))
+        self.nav_label.pack(pady=10, padx=20)
 
-        # --- Main Status Label ---
-        self.sidebar_frame.grid_rowconfigure(7, weight=1) # Push status to bottom
-        self.status_label = customtkinter.CTkLabel(self.sidebar_frame, text="Load a folder to begin.", wraplength=160)
-        self.status_label.grid(row=8, column=0, padx=20, pady=(10, 10), sticky="s")
+        self.collection_button = customtkinter.CTkButton(self.nav_pane, text="Track Collection", command=self.show_track_collection, corner_radius=5)
+        self.collection_button.pack(pady=5, padx=10, fill="x")
+
+        self.playlists_button = customtkinter.CTkButton(self.nav_pane, text="Playlists", state="disabled", corner_radius=5)
+        self.playlists_button.pack(pady=5, padx=10, fill="x")
+
+        # --- Content Pane (for the track list) ---
+        self.content_pane = customtkinter.CTkFrame(self.main_content_frame, corner_radius=5)
+        self.content_pane.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="nsew")
+        self.content_pane.grid_rowconfigure(0, weight=1)
+        self.content_pane.grid_columnconfigure(0, weight=1)
+
+        # --- Create a scrollable frame for the track list inside the content pane ---
+        self.track_list_frame = customtkinter.CTkScrollableFrame(self.content_pane, label_text="Track Collection")
+        self.track_list_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+
+        # --- Status Label ---
+        self.status_label = customtkinter.CTkLabel(self, text="Load a folder to begin.", anchor="w")
+        self.status_label.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+
+        # Initial display update
+        self.show_track_collection()
+
+    def load_app_library(self):
+        """Loads the library from the JSON file on startup."""
+        self.library_data = engine.load_library(self.library_file)
+        self.status_label.configure(text=f"Loaded {len(self.library_data['collection'])} tracks from library.")
+
+    def save_app_library(self):
+        """Saves the current library state to the JSON file."""
+        engine.save_library(self.library_data, self.library_file)
+        self.status_label.configure(text=f"Library saved. Total tracks: {len(self.library_data['collection'])}")
+
+    def show_track_collection(self):
+        """Updates the view to show the main track collection."""
+        self.track_list_frame.configure(label_text="Track Collection")
+        self.update_track_list_display(self.library_data["collection"])
 
 
     def load_folder(self):
-        """Opens a dialog to select a folder and loads music files."""
+        """Opens a dialog to select a folder and adds new music files to the collection."""
         folder_path = filedialog.askdirectory()
         if not folder_path:
             return
 
-        # --- Reset UI state ---
+        # --- Reset UI state for analysis ---
         self.progress_bar.set(0)
         self.progress_details_label.configure(text="")
         self.eta_label.configure(text="")
         self.selected_track_path = None
 
-        self.music_files = engine.find_music_files(folder_path)
-        self.analyzed_data = [] # Clear previous data
-        self.playlist_button.configure(state="disabled")
+        newly_found_files = engine.find_music_files(folder_path)
 
-        if self.music_files:
-            self.status_label.configure(text=f"{len(self.music_files)} tracks loaded. Ready for analysis.")
+        # Filter out files that are already in the library collection
+        existing_paths = {track['path'] for track in self.library_data['collection']}
+        self.files_to_analyze = [p for p in newly_found_files if p not in existing_paths]
+
+        if self.files_to_analyze:
+            self.status_label.configure(text=f"{len(self.files_to_analyze)} new tracks found. Ready to analyze.")
             self.analyze_button.configure(state="normal")
-            self.update_track_list_display()
         else:
-            self.status_label.configure(text="No supported music files found.")
+            self.status_label.configure(text="No new music files found in the selected folder.")
             self.analyze_button.configure(state="disabled")
-            self.update_track_list_display() # Clear the list
 
-    def update_track_list_display(self):
-        """Clears and redraws the track list in the UI."""
+    def update_track_list_display(self, tracks_to_display):
+        """Clears and redraws the track list in the UI with a given list of tracks."""
         # Clear existing widgets
         for widget in self.track_list_frame.winfo_children():
             widget.destroy()
@@ -116,23 +150,14 @@ class App(customtkinter.CTk):
             header_label = customtkinter.CTkLabel(self.track_list_frame, text=header, font=customtkinter.CTkFont(weight="bold"))
             header_label.grid(row=0, column=i, padx=10, pady=5, sticky="w")
 
-        # Create a dictionary for quick lookups of analyzed data
-        analyzed_map = {item['path']: item for item in self.analyzed_data}
-
         # Populate with tracks
-        for i, file_path in enumerate(self.music_files):
+        for i, track_data in enumerate(tracks_to_display):
+            file_path = track_data['path']
             track_name = file_path.stem
 
-            bpm = "--"
-            key = "--"
-            waveform_path = None
-            is_analyzed = file_path in analyzed_map
-
-            if is_analyzed:
-                track_data = analyzed_map[file_path]
-                bpm = track_data.get('bpm', '--')
-                key = track_data.get('camelot_key', '--')
-                waveform_path = track_data.get('waveform_path')
+            bpm = track_data.get('bpm', '--')
+            key = track_data.get('camelot_key', '--')
+            waveform_path = track_data.get('waveform_path')
 
             # --- Create a frame for each track row for selection highlighting ---
             track_frame = customtkinter.CTkFrame(self.track_list_frame, corner_radius=5)
@@ -172,19 +197,9 @@ class App(customtkinter.CTk):
     def track_selected(self, file_path):
         """Handles the event when a track is selected from the list."""
         self.selected_track_path = file_path
-
-        # Check if the selected track has been analyzed
-        is_analyzed = any(item['path'] == file_path for item in self.analyzed_data)
-
-        if is_analyzed:
-            self.playlist_button.configure(state="normal")
-            self.status_label.configure(text=f"Selected: {file_path.stem}")
-        else:
-            self.playlist_button.configure(state="disabled")
-            self.status_label.configure(text=f"Selected: {file_path.stem} (Not analyzed)")
-
-        # Redraw the list to show the selection highlight
-        self.update_track_list_display()
+        self.playlist_button.configure(state="normal")
+        self.status_label.configure(text=f"Selected: {file_path.stem}")
+        self.update_track_list_display(self.library_data["collection"])
 
     def create_playlist(self):
         """Creates a harmonic playlist starting with the selected track."""
@@ -193,14 +208,15 @@ class App(customtkinter.CTk):
 
         self.status_label.configure(text="Creating playlist...")
 
-        playlist_file = engine.create_harmonic_playlist(self.analyzed_data, self.selected_track_path)
+        # Pass the entire collection to the playlist function
+        playlist_file = engine.create_harmonic_playlist(self.library_data["collection"], self.selected_track_path)
 
         if playlist_file:
             self.status_label.configure(text=f"Playlist created: {playlist_file}")
             messagebox.showinfo("Playlist Created", f"Successfully created playlist:\n{playlist_file}")
         else:
             self.status_label.configure(text="Failed to create playlist.")
-            messagebox.showerror("Error", "Could not create the playlist. Please ensure the selected track has been analyzed.")
+            messagebox.showerror("Error", "Could not create the playlist.")
 
 
     def start_analysis_thread(self):
@@ -217,12 +233,10 @@ class App(customtkinter.CTk):
 
     def run_analysis(self):
         """The core analysis loop that runs in a background thread."""
-        total_files = len(self.music_files)
-        self.analyzed_data = []
+        total_files = len(self.files_to_analyze)
         start_time = time.time()
 
-        for i, file_path in enumerate(self.music_files):
-            # Update progress label
+        for i, file_path in enumerate(self.files_to_analyze):
             progress_text = f"Analyzing {i+1}/{total_files}:\n{file_path.name}"
             self.after(0, self.progress_details_label.configure, {"text": progress_text})
 
@@ -230,49 +244,45 @@ class App(customtkinter.CTk):
             if bpm and key:
                 camelot_key = engine.get_camelot_key(key)
                 if camelot_key:
-                    # Determine color from key
                     key_number = ''.join(filter(str.isdigit, camelot_key))
-                    color = engine.CAMELOT_COLOR_MAP.get(key_number, "#1f6aa5") # Default color if key not found
-
-                    # Generate waveform image
+                    color = engine.CAMELOT_COLOR_MAP.get(key_number, "#1f6aa5")
                     waveform_path = os.path.join(self.waveform_cache_dir, f"{file_path.stem}.png")
                     engine.generate_waveform_image(file_path, waveform_path, color=color)
 
                     track_info = {
-                        'path': file_path,
-                        'bpm': round(bpm),
-                        'camelot_key': camelot_key,
+                        'path': file_path, 'bpm': round(bpm), 'camelot_key': camelot_key,
                         'waveform_path': waveform_path
                     }
-                    self.analyzed_data.append(track_info)
+                    # Add new track to the main collection
+                    self.library_data["collection"].append(track_info)
                     engine.write_metadata_to_file(file_path, bpm, camelot_key)
 
-            # --- ETA Calculation ---
             elapsed_time = time.time() - start_time
             tracks_processed = i + 1
             avg_time_per_track = elapsed_time / tracks_processed
             remaining_tracks = total_files - tracks_processed
             eta_seconds = remaining_tracks * avg_time_per_track
 
-            if tracks_processed > 1: # Don't show ETA for the first track
+            if tracks_processed > 1:
                 eta_minutes, eta_sec = divmod(int(eta_seconds), 60)
                 eta_text = f"ETA: {eta_minutes}m {eta_sec}s"
                 self.after(0, self.eta_label.configure, {"text": eta_text})
 
             progress_value = (i + 1) / total_files
             self.after(0, self.progress_bar.set, progress_value)
-            self.after(0, self.update_track_list_display)
+            self.after(0, self.show_track_collection)
 
         self.after(0, self.analysis_complete)
 
     def analysis_complete(self):
         """Called on the main thread when analysis is finished."""
-        self.status_label.configure(text=f"Analysis complete. {len(self.analyzed_data)} tracks analyzed.")
+        self.status_label.configure(text=f"Analysis complete. Library updated.")
         self.progress_details_label.configure(text="")
         self.eta_label.configure(text="")
         self.progress_bar.set(1)
         self.add_folder_button.configure(state="normal")
-        self.update_track_list_display() # Final update
+        self.save_app_library() # Save the updated library
+        self.show_track_collection() # Refresh the view
 
 
 if __name__ == "__main__":
