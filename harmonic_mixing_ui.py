@@ -79,6 +79,19 @@ class App(customtkinter.CTk):
         self.delete_playlist_button = customtkinter.CTkButton(self.nav_pane, text="Delete Playlist", state="disabled", command=self.delete_selected_playlist, fg_color="transparent", border_color="#ff4d4d", border_width=1, hover_color="#ff4d4d")
         self.delete_playlist_button.pack(pady=(10,5), padx=10, fill="x")
 
+        # --- Add a separator and playlist editing controls ---
+        self.separator = customtkinter.CTkFrame(self.nav_pane, height=2, fg_color="gray20")
+        self.separator.pack(fill="x", padx=10, pady=10)
+
+        self.edit_label = customtkinter.CTkLabel(self.nav_pane, text="Playlist Editing", font=customtkinter.CTkFont(size=16, weight="bold"))
+        self.edit_label.pack(pady=5)
+
+        self.move_up_button = customtkinter.CTkButton(self.nav_pane, text="Move Track Up", state="disabled", command=self.move_track_up)
+        self.move_up_button.pack(pady=5, padx=10, fill="x")
+
+        self.move_down_button = customtkinter.CTkButton(self.nav_pane, text="Move Track Down", state="disabled", command=self.move_track_down)
+        self.move_down_button.pack(pady=5, padx=10, fill="x")
+
         # --- Content Pane (for the track list) ---
         self.content_pane = customtkinter.CTkFrame(self.main_content_frame, corner_radius=5)
         self.content_pane.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="nsew")
@@ -112,6 +125,8 @@ class App(customtkinter.CTk):
         self.track_list_frame.grid()
         self.playlist_list_frame.grid_remove()
         self.delete_playlist_button.configure(state="disabled")
+        self.move_up_button.configure(state="disabled")
+        self.move_down_button.configure(state="disabled")
         self.selected_playlist_name = None
         self.update_track_list_display(self.library_data["collection"])
 
@@ -119,6 +134,8 @@ class App(customtkinter.CTk):
         """Updates the view to show the list of playlists."""
         self.track_list_frame.grid_remove()
         self.playlist_list_frame.grid()
+        self.move_up_button.configure(state="disabled")
+        self.move_down_button.configure(state="disabled")
         self.update_playlists_display()
         self.status_label.configure(text="Playlists view. Select a playlist to view its content.")
 
@@ -210,9 +227,18 @@ class App(customtkinter.CTk):
     def track_selected(self, file_path):
         """Handles the event when a track is selected from the list."""
         self.selected_track_path = file_path
+
+        # Enable create playlist button regardless of view
         self.playlist_button.configure(state="normal")
         self.status_label.configure(text=f"Selected: {file_path.stem}")
-        self.update_track_list_display(self.library_data["collection"])
+
+        # If we are in a playlist view, enable editing buttons
+        if self.selected_playlist_name:
+            self.move_up_button.configure(state="normal")
+            self.move_down_button.configure(state="normal")
+            self.update_track_list_display(self.library_data["playlists"][self.selected_playlist_name])
+        else:
+            self.update_track_list_display(self.library_data["collection"])
 
     def create_playlist(self):
         """Prompts for a playlist name and saves the new harmonic playlist."""
@@ -289,6 +315,40 @@ class App(customtkinter.CTk):
                 self.update_playlists_display()
             else:
                 messagebox.showerror("Error", "Could not find the selected playlist to delete.")
+
+    def move_track_up(self):
+        """Moves the selected track one position up in the current playlist."""
+        if not self.selected_track_path or not self.selected_playlist_name:
+            return
+
+        playlist = self.library_data["playlists"][self.selected_playlist_name]
+
+        # Find the index of the selected track
+        for i, track in enumerate(playlist):
+            if track['path'] == self.selected_track_path:
+                if i > 0: # Cannot move the first track up
+                    # Swap with the previous item
+                    playlist[i], playlist[i-1] = playlist[i-1], playlist[i]
+                    self.save_app_library()
+                    self.show_playlist_content(self.selected_playlist_name)
+                break
+
+    def move_track_down(self):
+        """Moves the selected track one position down in the current playlist."""
+        if not self.selected_track_path or not self.selected_playlist_name:
+            return
+
+        playlist = self.library_data["playlists"][self.selected_playlist_name]
+
+        # Find the index of the selected track
+        for i, track in enumerate(playlist):
+            if track['path'] == self.selected_track_path:
+                if i < len(playlist) - 1: # Cannot move the last track down
+                    # Swap with the next item
+                    playlist[i], playlist[i+1] = playlist[i+1], playlist[i]
+                    self.save_app_library()
+                    self.show_playlist_content(self.selected_playlist_name)
+                break
 
 
     def start_analysis_thread(self):
