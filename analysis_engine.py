@@ -14,6 +14,21 @@ SIMPLE_CAMELOT_MAP = {
     'F#': '2B', 'G': '9B', 'G#': '4B', 'A': '11B', 'A#': '6B', 'B': '1B'
 }
 
+CAMELOT_COLOR_MAP = {
+    "1": "#ff6b6b",  # 1A/1B
+    "2": "#ff8e3c",  # 2A/2B
+    "3": "#ffc13b",  # 3A/3B
+    "4": "#eaff5b",  # 4A/4B
+    "5": "#86ff4b",  # 5A/5B
+    "6": "#4bffa7",  # 6A/6B
+    "7": "#4bffff",  # 7A/7B
+    "8": "#4b86ff",  # 8A/8B
+    "9": "#8e4bff",  # 9A/9B
+    "10": "#c13bff", # 10A/10B
+    "11": "#ff3bde", # 11A/11B
+    "12": "#ff3b8e"  # 12A/12B
+}
+
 # --- 2. FUNKTIONEN ---
 
 def find_music_files(music_folder: str) -> List[Path]:

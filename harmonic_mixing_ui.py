@@ -230,9 +230,13 @@ class App(customtkinter.CTk):
             if bpm and key:
                 camelot_key = engine.get_camelot_key(key)
                 if camelot_key:
+                    # Determine color from key
+                    key_number = ''.join(filter(str.isdigit, camelot_key))
+                    color = engine.CAMELOT_COLOR_MAP.get(key_number, "#1f6aa5") # Default color if key not found
+
                     # Generate waveform image
                     waveform_path = os.path.join(self.waveform_cache_dir, f"{file_path.stem}.png")
-                    engine.generate_waveform_image(file_path, waveform_path)
+                    engine.generate_waveform_image(file_path, waveform_path, color=color)
 
                     track_info = {
                         'path': file_path,
