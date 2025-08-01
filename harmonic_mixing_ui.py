@@ -3,6 +3,7 @@ import tkinter
 from tkinter import filedialog, messagebox
 import analysis_engine as engine
 import threading
+import time
 
 # Set the theme and color scheme for the application
 customtkinter.set_appearance_mode("Dark")
@@ -57,9 +58,17 @@ class App(customtkinter.CTk):
         self.track_list_frame.grid_columnconfigure(1, weight=1) # BPM
         self.track_list_frame.grid_columnconfigure(2, weight=1) # Key
 
-        # --- Status Label (replaces info_label) ---
+        # --- Detailed Progress Labels ---
+        self.progress_details_label = customtkinter.CTkLabel(self.sidebar_frame, text="", wraplength=160)
+        self.progress_details_label.grid(row=5, column=0, padx=20, pady=(0, 0))
+
+        self.eta_label = customtkinter.CTkLabel(self.sidebar_frame, text="", wraplength=160)
+        self.eta_label.grid(row=6, column=0, padx=20, pady=(0, 0))
+
+        # --- Main Status Label ---
+        self.sidebar_frame.grid_rowconfigure(7, weight=1) # Push status to bottom
         self.status_label = customtkinter.CTkLabel(self.sidebar_frame, text="Load a folder to begin.", wraplength=160)
-        self.status_label.grid(row=6, column=0, padx=20, pady=(10, 0), sticky="s")
+        self.status_label.grid(row=8, column=0, padx=20, pady=(10, 10), sticky="s")
 
 
     def load_folder(self):
@@ -67,6 +76,12 @@ class App(customtkinter.CTk):
         folder_path = filedialog.askdirectory()
         if not folder_path:
             return
+
+        # --- Reset UI state ---
+        self.progress_bar.set(0)
+        self.progress_details_label.configure(text="")
+        self.eta_label.configure(text="")
+        self.selected_track_path = None
 
         self.music_files = engine.find_music_files(folder_path)
         self.analyzed_data = [] # Clear previous data
@@ -169,8 +184,10 @@ class App(customtkinter.CTk):
         """Starts the track analysis in a separate thread to keep the UI responsive."""
         self.analyze_button.configure(state="disabled")
         self.add_folder_button.configure(state="disabled")
-        self.status_label.configure(text="Analysis in progress...")
+        self.status_label.configure(text="Preparing analysis...")
         self.progress_bar.set(0)
+        self.progress_details_label.configure(text="")
+        self.eta_label.configure(text="")
 
         analysis_thread = threading.Thread(target=self.run_analysis, daemon=True)
         analysis_thread.start()
@@ -179,20 +196,35 @@ class App(customtkinter.CTk):
         """The core analysis loop that runs in a background thread."""
         total_files = len(self.music_files)
         self.analyzed_data = []
+        start_time = time.time()
 
         for i, file_path in enumerate(self.music_files):
+            # Update progress label
+            progress_text = f"Analyzing {i+1}/{total_files}:\n{file_path.name}"
+            self.after(0, self.progress_details_label.configure, {"text": progress_text})
+
             bpm, key = engine.analyze_track(file_path)
             if bpm and key:
                 camelot_key = engine.get_camelot_key(key)
                 if camelot_key:
                     track_info = {'path': file_path, 'bpm': round(bpm), 'camelot_key': camelot_key}
                     self.analyzed_data.append(track_info)
-                    # We can still write metadata in the background
                     engine.write_metadata_to_file(file_path, bpm, camelot_key)
+
+            # --- ETA Calculation ---
+            elapsed_time = time.time() - start_time
+            tracks_processed = i + 1
+            avg_time_per_track = elapsed_time / tracks_processed
+            remaining_tracks = total_files - tracks_processed
+            eta_seconds = remaining_tracks * avg_time_per_track
+
+            if tracks_processed > 1: # Don't show ETA for the first track
+                eta_minutes, eta_sec = divmod(int(eta_seconds), 60)
+                eta_text = f"ETA: {eta_minutes}m {eta_sec}s"
+                self.after(0, self.eta_label.configure, {"text": eta_text})
 
             progress_value = (i + 1) / total_files
             self.after(0, self.progress_bar.set, progress_value)
-            # Update the UI list incrementally
             self.after(0, self.update_track_list_display)
 
         self.after(0, self.analysis_complete)
@@ -200,6 +232,8 @@ class App(customtkinter.CTk):
     def analysis_complete(self):
         """Called on the main thread when analysis is finished."""
         self.status_label.configure(text=f"Analysis complete. {len(self.analyzed_data)} tracks analyzed.")
+        self.progress_details_label.configure(text="")
+        self.eta_label.configure(text="")
         self.progress_bar.set(1)
         self.add_folder_button.configure(state="normal")
         self.update_track_list_display() # Final update
