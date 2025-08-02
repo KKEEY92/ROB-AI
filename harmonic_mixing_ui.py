@@ -172,61 +172,67 @@ class App(customtkinter.CTk):
 
     def update_track_list_display(self, tracks_to_display):
         """Clears and redraws the track list in the UI with a given list of tracks."""
-        # Clear existing widgets
         for widget in self.track_list_frame.winfo_children():
             widget.destroy()
 
-        # Create Header
-        headers = ["Track Name", "BPM", "Key", "Waveform"]
-        column_weights = [2, 1, 1, 4] # Adjust column weights
+        headers = ["Track Name", "BPM", "Key", "Loudness", "Brightness", "Waveform"]
+        column_weights = [3, 1, 1, 1, 1, 4]
 
         for i, header in enumerate(headers):
             self.track_list_frame.grid_columnconfigure(i, weight=column_weights[i])
             header_label = customtkinter.CTkLabel(self.track_list_frame, text=header, font=customtkinter.CTkFont(weight="bold"))
             header_label.grid(row=0, column=i, padx=10, pady=5, sticky="w")
 
-        # Populate with tracks
         for i, track_data in enumerate(tracks_to_display):
             file_path = track_data['path']
             track_name = file_path.stem
 
-            bpm = track_data.get('bpm', '--')
-            key = track_data.get('camelot_key', '--')
+            bpm_val = track_data.get('bpm')
+            bpm_text = f"{bpm_val:.2f}" if isinstance(bpm_val, float) else "--"
+
+            key_text = track_data.get('camelot_key', '--')
+
+            loudness_val = track_data.get('loudness')
+            loudness_text = f"{loudness_val:.2f} LUFS" if isinstance(loudness_val, float) else "--"
+
+            brightness_val = track_data.get('brightness')
+            brightness_text = f"{brightness_val:.0f}" if isinstance(brightness_val, float) else "--"
+
             waveform_path = track_data.get('waveform_path')
 
-            # --- Create a frame for each track row for selection highlighting ---
             track_frame = customtkinter.CTkFrame(self.track_list_frame, corner_radius=5)
-            track_frame.grid(row=i + 1, column=0, columnspan=4, padx=5, pady=2, sticky="ew")
+            track_frame.grid(row=i + 1, column=0, columnspan=len(headers), padx=5, pady=2, sticky="ew")
             for j, weight in enumerate(column_weights):
                 track_frame.grid_columnconfigure(j, weight=weight)
 
-
-            # Change background color if selected
             if self.selected_track_path == file_path:
                 track_frame.configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
 
-            # --- Create labels/buttons for each track's data ---
             track_button = customtkinter.CTkButton(track_frame, text=track_name, anchor="w", fg_color="transparent", text_color=customtkinter.ThemeManager.theme["CTkLabel"]["text_color"],
                                                    command=lambda p=file_path: self.track_selected(p))
             track_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
-            bpm_label = customtkinter.CTkLabel(track_frame, text=bpm, anchor="w")
+            bpm_label = customtkinter.CTkLabel(track_frame, text=bpm_text, anchor="w")
             bpm_label.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
 
-            key_label = customtkinter.CTkLabel(track_frame, text=key, anchor="w")
+            key_label = customtkinter.CTkLabel(track_frame, text=key_text, anchor="w")
             key_label.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
 
-            # --- Display Waveform ---
+            loudness_label = customtkinter.CTkLabel(track_frame, text=loudness_text, anchor="w")
+            loudness_label.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
+
+            brightness_label = customtkinter.CTkLabel(track_frame, text=brightness_text, anchor="w")
+            brightness_label.grid(row=0, column=4, padx=10, pady=5, sticky="ew")
+
             if waveform_path and os.path.exists(waveform_path):
                 try:
                     img = Image.open(waveform_path)
-                    ctk_img = customtkinter.CTkImage(light_image=img, dark_image=img, size=(240, 32))
+                    ctk_img = customtkinter.CTkImage(light_image=img, dark_image=img, size=(160, 24))
                     waveform_label = customtkinter.CTkLabel(track_frame, image=ctk_img, text="")
-                    waveform_label.grid(row=0, column=3, padx=10, pady=2, sticky="w")
+                    waveform_label.grid(row=0, column=5, padx=10, pady=2, sticky="w")
                 except Exception:
-                    # If image fails to load, show a placeholder
                     placeholder = customtkinter.CTkLabel(track_frame, text="Error", anchor="w")
-                    placeholder.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
+                    placeholder.grid(row=0, column=5, padx=10, pady=5, sticky="ew")
 
 
     def track_selected(self, file_path):
@@ -377,9 +383,10 @@ class App(customtkinter.CTk):
             progress_text = f"Analyzing {i+1}/{total_files}:\n{file_path.name}"
             self.after(0, self.progress_details_label.configure, {"text": progress_text})
 
-            bpm, key = engine.analyze_track(file_path)
-            if bpm and key:
-                camelot_key = engine.get_camelot_key(key)
+            analysis_results = engine.analyze_track_full(file_path)
+
+            if analysis_results:
+                camelot_key = engine.get_camelot_key(analysis_results["key"])
                 if camelot_key:
                     key_number = ''.join(filter(str.isdigit, camelot_key))
                     color = engine.CAMELOT_COLOR_MAP.get(key_number, "#1f6aa5")
@@ -387,12 +394,16 @@ class App(customtkinter.CTk):
                     engine.generate_waveform_image(file_path, waveform_path, color=color)
 
                     track_info = {
-                        'path': file_path, 'bpm': round(bpm), 'camelot_key': camelot_key,
+                        'path': file_path,
+                        'bpm': analysis_results["bpm"],
+                        'key': analysis_results["key"],
+                        'camelot_key': camelot_key,
+                        'loudness': analysis_results["loudness"],
+                        'brightness': analysis_results["brightness"],
                         'waveform_path': waveform_path
                     }
-                    # Add new track to the main collection
                     self.library_data["collection"].append(track_info)
-                    engine.write_metadata_to_file(file_path, bpm, camelot_key)
+                    engine.write_metadata_to_file(file_path, analysis_results["bpm"], camelot_key)
 
             elapsed_time = time.time() - start_time
             tracks_processed = i + 1

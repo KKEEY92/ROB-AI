@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from typing import Optional, List, Tuple, Dict, Any
 import librosa
+import soundfile as sf
+import pyloudnorm as pyln
 from mutagen.easyid3 import EasyID3
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,20 +43,42 @@ def find_music_files(music_folder: str) -> List[Path]:
                 found_files.append(Path(root) / file)
     return found_files
 
-def analyze_track(file_path: Path) -> Tuple[Optional[float], Optional[str]]:
-    """Analysiert eine Audiodatei, um BPM und Tonart zu ermitteln."""
+def analyze_track_full(file_path: Path) -> Optional[Dict[str, Any]]:
+    """
+    Analysiert eine Audiodatei für BPM, Tonart, Lautheit und Helligkeit.
+    Gibt ein Dictionary mit allen Analyseergebnissen zurück.
+    """
     try:
-        y, sr = librosa.load(str(file_path), duration=120)
+        # --- Standard-Analyse (BPM, Tonart) ---
+        y, sr = librosa.load(str(file_path), sr=44100, duration=180)
+
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        bpm = round(float(tempo))
+        bpm = float(tempo)
+
         chroma = librosa.feature.chroma_stft(y=y, sr=sr)
         key_strengths = chroma.sum(axis=1)
         strongest_pitch_index = key_strengths.argmax()
         major_keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key = major_keys[strongest_pitch_index]
-        return bpm, key
+
+        # --- Erweiterte Analyse ---
+        # 1. Lautheit (LUFS)
+        # pyloudnorm requires the data to be read by soundfile
+        data, rate = sf.read(file_path)
+        meter = pyln.Meter(rate)
+        loudness = meter.integrated_loudness(data)
+
+        # 2. Helligkeit (Spectral Centroid)
+        spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
+
+        return {
+            "bpm": bpm,
+            "key": key,
+            "loudness": loudness,
+            "brightness": spectral_centroid
+        }
     except Exception:
-        return None, None
+        return None
 
 def get_camelot_key(key: str) -> Optional[str]:
     """Übersetzt eine Tonart in einen Camelot-Code."""
