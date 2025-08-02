@@ -6,6 +6,7 @@ import analysis_engine as engine
 import threading
 import time
 import os
+import pygame
 
 # Set the theme and color scheme for the application
 customtkinter.set_appearance_mode("Dark")
@@ -20,9 +21,14 @@ class App(customtkinter.CTk):
         self.library_data = {"collection": [], "playlists": {}}
         self.selected_track_path = None
         self.selected_playlist_name = None
+        self.is_playing = False
         self.waveform_cache_dir = "waveform_cache"
         if not os.path.exists(self.waveform_cache_dir):
             os.makedirs(self.waveform_cache_dir)
+
+        # --- Initialize Pygame Mixer ---
+        pygame.init()
+        pygame.mixer.init()
 
         # --- Configure the main window ---
         self.title("Harmonic Mixing Studio")
@@ -110,6 +116,24 @@ class App(customtkinter.CTk):
         # --- Status Label ---
         self.status_label = customtkinter.CTkLabel(self, text="Load a folder to begin.", anchor="w")
         self.status_label.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
+
+        # --- Player Frame ---
+        self.player_frame = customtkinter.CTkFrame(self, height=60)
+        self.player_frame.grid(row=3, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="ew")
+        self.player_frame.grid_columnconfigure(3, weight=1)
+
+        self.play_pause_button = customtkinter.CTkButton(self.player_frame, text="Play", width=60, command=self.play_pause_track, state="disabled")
+        self.play_pause_button.grid(row=0, column=0, padx=(10,5), pady=5)
+
+        self.stop_button = customtkinter.CTkButton(self.player_frame, text="Stop", width=60, command=self.stop_track, state="disabled")
+        self.stop_button.grid(row=0, column=1, padx=5, pady=5)
+
+        self.time_label = customtkinter.CTkLabel(self.player_frame, text="00:00 / 00:00")
+        self.time_label.grid(row=0, column=2, padx=5, pady=5)
+
+        self.scrub_bar = customtkinter.CTkSlider(self.player_frame, from_=0, to=100, command=None)
+        self.scrub_bar.set(0)
+        self.scrub_bar.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
 
         # --- Load initial data and display it ---
         self.load_app_library()
@@ -238,6 +262,7 @@ class App(customtkinter.CTk):
     def track_selected(self, file_path):
         """Handles the event when a track is selected from the list."""
         self.selected_track_path = file_path
+        self.load_track_for_playback(file_path)
 
         # Enable create playlist button regardless of view
         self.playlist_button.configure(state="normal")
@@ -250,6 +275,66 @@ class App(customtkinter.CTk):
             self.update_track_list_display(self.library_data["playlists"][self.selected_playlist_name])
         else:
             self.update_track_list_display(self.library_data["collection"])
+
+    def load_track_for_playback(self, file_path):
+        """Loads a track into the pygame mixer."""
+        try:
+            self.stop_track() # Stop any currently playing track
+            pygame.mixer.music.load(file_path)
+
+            # Get track length
+            audio = pygame.mixer.Sound(file_path)
+            self.track_length = audio.get_length()
+
+            self.scrub_bar.configure(to=self.track_length)
+            self.time_label.configure(text=f"00:00 / {time.strftime('%M:%S', time.gmtime(self.track_length))}")
+            self.play_pause_button.configure(state="normal")
+            self.stop_button.configure(state="normal")
+        except Exception as e:
+            self.play_pause_button.configure(state="disabled")
+            self.stop_button.configure(state="disabled")
+            self.time_label.configure(text="00:00 / 00:00")
+            self.status_label.configure(text=f"Error loading track: {e}")
+
+    def play_pause_track(self):
+        """Toggles play/pause for the loaded track."""
+        if self.is_playing:
+            pygame.mixer.music.pause()
+            self.is_playing = False
+            self.play_pause_button.configure(text="Play")
+        else:
+            self.is_playing = True
+            pygame.mixer.music.unpause() if pygame.mixer.music.get_pos() > 0 else pygame.mixer.music.play()
+            self.play_pause_button.configure(text="Pause")
+            self.start_playback_progress_thread()
+
+    def stop_track(self):
+        """Stops playback and resets the player."""
+        self.is_playing = False
+        pygame.mixer.music.stop()
+        self.play_pause_button.configure(text="Play")
+        self.scrub_bar.set(0)
+        self.time_label.configure(text=f"00:00 / {time.strftime('%M:%S', time.gmtime(getattr(self, 'track_length', 0)))}")
+
+    def start_playback_progress_thread(self):
+        """Starts the thread that updates the playback progress bar and time."""
+        progress_thread = threading.Thread(target=self.update_playback_progress, daemon=True)
+        progress_thread.start()
+
+    def update_playback_progress(self):
+        """Updates the scrub bar and time label while music is playing."""
+        while self.is_playing and pygame.mixer.music.get_busy():
+            current_pos = pygame.mixer.music.get_pos() / 1000  # get_pos is in milliseconds
+            self.scrub_bar.set(current_pos)
+
+            current_time_str = time.strftime('%M:%S', time.gmtime(current_pos))
+            total_time_str = time.strftime('%M:%S', time.gmtime(self.track_length))
+            self.time_label.configure(text=f"{current_time_str} / {total_time_str}")
+
+            time.sleep(0.1)
+
+        if self.is_playing: # If the song finished naturally
+            self.stop_track()
 
     def create_playlist(self):
         """Prompts for a playlist name and saves the new harmonic playlist."""
