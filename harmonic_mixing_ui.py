@@ -63,14 +63,57 @@ class App(customtkinter.CTk):
         self.eta_label.pack(side="right", padx=10)
 
 
-        # --- Create the main content layout (Navigation + Track List) ---
-        self.main_content_frame = customtkinter.CTkFrame(self)
-        self.main_content_frame.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+        # --- Create Tab View ---
+        self.tab_view = customtkinter.CTkTabview(self)
+        self.tab_view.grid(row=1, column=0, columnspan=2, padx=10, pady=(0,10), sticky="nsew")
         self.grid_rowconfigure(1, weight=1)
-        self.main_content_frame.grid_columnconfigure(1, weight=1)
+
+        self.tab_view.add("Library")
+        self.tab_view.add("Converter")
+
+        # --- Library Tab ---
+        self.library_tab = self.tab_view.tab("Library")
+        self.library_tab.grid_columnconfigure(1, weight=1)
+        self.library_tab.grid_rowconfigure(0, weight=1)
+
+        # --- Converter Tab ---
+        self.converter_tab = self.tab_view.tab("Converter")
+        self.converter_tab.grid_columnconfigure(0, weight=1)
+
+        self.converter_track_label = customtkinter.CTkLabel(self.converter_tab, text="Selected Track: None", font=customtkinter.CTkFont(size=16, weight="bold"))
+        self.converter_track_label.pack(pady=20)
+
+        self.converter_frame = customtkinter.CTkFrame(self.converter_tab)
+        self.converter_frame.pack(padx=20, pady=10, fill="x")
+
+        # --- Conversion Options ---
+        # Format
+        customtkinter.CTkLabel(self.converter_frame, text="Format:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.format_menu = customtkinter.CTkOptionMenu(self.converter_frame, values=["mp3", "wav", "flac", "aiff"], command=self.on_format_change)
+        self.format_menu.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+
+        # Sample Rate
+        customtkinter.CTkLabel(self.converter_frame, text="Sample Rate:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.samplerate_menu = customtkinter.CTkOptionMenu(self.converter_frame, values=["44100", "48000", "96000"])
+        self.samplerate_menu.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
+
+        # Bitrate
+        self.bitrate_label = customtkinter.CTkLabel(self.converter_frame, text="Bitrate:")
+        self.bitrate_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.bitrate_menu = customtkinter.CTkOptionMenu(self.converter_frame, values=["192k", "256k", "320k"])
+        self.bitrate_menu.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+
+        # Channels
+        customtkinter.CTkLabel(self.converter_frame, text="Channels:").grid(row=3, column=0, padx=10, pady=5, sticky="w")
+        self.channels_menu = customtkinter.CTkOptionMenu(self.converter_frame, values=["Stereo", "Mono"])
+        self.channels_menu.grid(row=3, column=1, padx=10, pady=5, sticky="ew")
+
+        # Start Button
+        self.start_conversion_button = customtkinter.CTkButton(self.converter_tab, text="Start Conversion", state="disabled", command=self.start_conversion_thread)
+        self.start_conversion_button.pack(pady=20)
 
         # --- Navigation Pane ---
-        self.nav_pane = customtkinter.CTkFrame(self.main_content_frame, width=200, corner_radius=5)
+        self.nav_pane = customtkinter.CTkFrame(self.library_tab, width=200, corner_radius=5)
         self.nav_pane.grid(row=0, column=0, padx=10, pady=10, sticky="nsw")
 
         self.nav_label = customtkinter.CTkLabel(self.nav_pane, text="Library", font=customtkinter.CTkFont(size=18, weight="bold"))
@@ -85,7 +128,6 @@ class App(customtkinter.CTk):
         self.delete_playlist_button = customtkinter.CTkButton(self.nav_pane, text="Delete Playlist", state="disabled", command=self.delete_selected_playlist, fg_color="transparent", border_color="#ff4d4d", border_width=1, hover_color="#ff4d4d")
         self.delete_playlist_button.pack(pady=(10,5), padx=10, fill="x")
 
-        # --- Add a separator and playlist editing controls ---
         self.separator = customtkinter.CTkFrame(self.nav_pane, height=2, fg_color="gray20")
         self.separator.pack(fill="x", padx=10, pady=10)
 
@@ -99,19 +141,17 @@ class App(customtkinter.CTk):
         self.move_down_button.pack(pady=5, padx=10, fill="x")
 
         # --- Content Pane (for the track list) ---
-        self.content_pane = customtkinter.CTkFrame(self.main_content_frame, corner_radius=5)
+        self.content_pane = customtkinter.CTkFrame(self.library_tab, corner_radius=5)
         self.content_pane.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="nsew")
         self.content_pane.grid_rowconfigure(0, weight=1)
         self.content_pane.grid_columnconfigure(0, weight=1)
 
-        # --- Create a scrollable frame for the track list inside the content pane ---
         self.track_list_frame = customtkinter.CTkScrollableFrame(self.content_pane, label_text="Track Collection")
         self.track_list_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 
-        # --- Create a scrollable frame for the PLAYLIST list ---
         self.playlist_list_frame = customtkinter.CTkScrollableFrame(self.content_pane)
         self.playlist_list_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
-        self.playlist_list_frame.grid_remove() # Hide it by default
+        self.playlist_list_frame.grid_remove()
 
         # --- Status Label ---
         self.status_label = customtkinter.CTkLabel(self, text="Load a folder to begin.", anchor="w")
@@ -264,9 +304,13 @@ class App(customtkinter.CTk):
         self.selected_track_path = file_path
         self.load_track_for_playback(file_path)
 
-        # Enable create playlist button regardless of view
+        # Enable action buttons
         self.playlist_button.configure(state="normal")
+        self.start_conversion_button.configure(state="normal")
+
         self.status_label.configure(text=f"Selected: {file_path.stem}")
+        self.converter_track_label.configure(text=f"Selected Track: {file_path.name}")
+
 
         # If we are in a playlist view, enable editing buttons
         if self.selected_playlist_name:
@@ -274,7 +318,15 @@ class App(customtkinter.CTk):
             self.move_down_button.configure(state="normal")
             self.update_track_list_display(self.library_data["playlists"][self.selected_playlist_name])
         else:
+            # Redraw the main collection to show the highlight
             self.update_track_list_display(self.library_data["collection"])
+
+    def on_format_change(self, choice):
+        """Disables the bitrate menu if the format is not mp3."""
+        if choice == "mp3":
+            self.bitrate_menu.configure(state="normal")
+        else:
+            self.bitrate_menu.configure(state="disabled")
 
     def load_track_for_playback(self, file_path):
         """Loads a track into the pygame mixer."""
@@ -411,6 +463,56 @@ class App(customtkinter.CTk):
                 self.update_playlists_display()
             else:
                 messagebox.showerror("Error", "Could not find the selected playlist to delete.")
+
+    def start_conversion_thread(self):
+        """Gathers settings and starts the conversion in a new thread."""
+        if not self.selected_track_path:
+            messagebox.showwarning("Warning", "Please select a track to convert first.")
+            return
+
+        # Ask for output file path
+        output_format = self.format_menu.get()
+        output_path = filedialog.asksaveasfilename(
+            defaultextension=f".{output_format}",
+            filetypes=[(f"{output_format.upper()} files", f"*.{output_format}"), ("All files", "*.*")]
+        )
+        if not output_path:
+            return # User cancelled
+
+        # Gather settings from UI
+        settings = {
+            "source_path": self.selected_track_path,
+            "output_path": output_path,
+            "format": output_format,
+            "sample_rate": int(self.samplerate_menu.get()),
+            "bitrate": self.bitrate_menu.get() if output_format == "mp3" else None,
+            "channels": 1 if self.channels_menu.get() == "Mono" else 2
+        }
+
+        self.status_label.configure(text=f"Converting {self.selected_track_path.name}...")
+        self.start_conversion_button.configure(state="disabled")
+
+        conversion_thread = threading.Thread(target=self.run_conversion, args=(settings,), daemon=True)
+        conversion_thread.start()
+
+    def run_conversion(self, settings: dict):
+        """The core conversion loop that runs in a background thread."""
+        success = engine.convert_audio(**settings)
+        self.after(0, self.conversion_complete, success, settings['output_path'])
+
+    def conversion_complete(self, success: bool, output_path: str):
+        """Called on the main thread when conversion is finished."""
+        self.start_conversion_button.configure(state="normal")
+        if success:
+            self.status_label.configure(text=f"Successfully converted file to {os.path.basename(output_path)}")
+            add_to_lib = messagebox.askyesno("Success", "Conversion successful!\n\nDo you want to add the new file to the library for analysis?")
+            if add_to_lib:
+                self.files_to_analyze = [output_path]
+                self.analyze_button.configure(state="normal")
+                self.status_label.configure(text="New file added. Ready to analyze.")
+        else:
+            messagebox.showerror("Error", "File conversion failed. Please check the console for errors and ensure FFmpeg is installed correctly.")
+            self.status_label.configure(text="Conversion failed.")
 
     def move_track_up(self):
         """Moves the selected track one position up in the current playlist."""

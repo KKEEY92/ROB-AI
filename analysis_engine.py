@@ -5,6 +5,7 @@ from typing import Optional, List, Tuple, Dict, Any
 import librosa
 import soundfile as sf
 import pyloudnorm as pyln
+from pydub import AudioSegment
 from mutagen.easyid3 import EasyID3
 import matplotlib.pyplot as plt
 import numpy as np
@@ -114,6 +115,36 @@ def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str) -> boo
         audio.save()
         return True
     except Exception:
+        return False
+
+# --- 4. AUDIO CONVERSION ---
+
+def convert_audio(source_path: Path, output_path: Path, format: str, sample_rate: int, bitrate: Optional[str], channels: int) -> bool:
+    """
+    Converts an audio file to a different format with specified parameters.
+    """
+    try:
+        audio = AudioSegment.from_file(source_path)
+
+        # Set channels
+        if channels is not None:
+            audio = audio.set_channels(channels)
+
+        # Set sample rate
+        if sample_rate is not None:
+            audio = audio.set_frame_rate(sample_rate)
+
+        # Prepare export parameters
+        export_params = {}
+        if format == 'mp3' and bitrate is not None:
+            export_params['bitrate'] = bitrate
+
+        # Export the file
+        audio.export(output_path, format=format, parameters=export_params)
+
+        return True
+    except Exception as e:
+        print(f"Error during conversion: {e}") # For debugging
         return False
 
 # --- 3. LIBRARY PERSISTENCE ---
