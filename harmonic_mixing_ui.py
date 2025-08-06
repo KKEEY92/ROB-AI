@@ -3,6 +3,7 @@ import tkinter
 from tkinter import filedialog, messagebox
 from PIL import Image
 import analysis_engine as engine
+from camelot_wheel_widget import CamelotWheel
 import threading
 import time
 import os
@@ -22,7 +23,7 @@ class App(customtkinter.CTk):
         self.selected_track_path = None
         self.selected_playlist_name = None
         self.is_playing = False
-        self.current_track_rows = {} # To keep track of track row widgets
+        self.current_track_rows = {}
         self.waveform_cache_dir = "waveform_cache"
         if not os.path.exists(self.waveform_cache_dir):
             os.makedirs(self.waveform_cache_dir)
@@ -143,6 +144,10 @@ class App(customtkinter.CTk):
 
         self.move_down_button = customtkinter.CTkButton(self.nav_pane, text="Move Track Down", state="disabled", command=self.move_track_down)
         self.move_down_button.pack(pady=5, padx=10, fill="x")
+
+        # --- Add Camelot Wheel ---
+        self.camelot_wheel = CamelotWheel(self.nav_pane)
+        self.camelot_wheel.pack(pady=20, padx=10, fill="x", side="bottom")
 
         # --- Content Pane (for the track list) ---
         self.content_pane = customtkinter.CTkFrame(self.library_tab, corner_radius=5)
