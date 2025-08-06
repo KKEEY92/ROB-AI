@@ -12,11 +12,11 @@ class CamelotWheel(customtkinter.CTkFrame):
 
         self.segments = {} # To store canvas item IDs for interactivity
         self.key_to_segment_id = {} # For easier lookup
-        self.draw_wheel()
 
+        self.canvas.bind("<Configure>", self.draw_wheel)
         self.canvas.bind("<Button-1>", self.on_canvas_click)
 
-    def draw_wheel(self, highlighted_keys=None):
+    def draw_wheel(self, event=None, highlighted_keys=None):
         if highlighted_keys is None:
             highlighted_keys = []
 
