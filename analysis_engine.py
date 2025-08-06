@@ -6,7 +6,10 @@ import librosa
 import soundfile as sf
 import pyloudnorm as pyln
 from pydub import AudioSegment
+import mutagen
 from mutagen.easyid3 import EasyID3
+import musicbrainzngs
+import requests
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -112,6 +115,75 @@ def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str) -> boo
         audio = EasyID3(str(file_path))
         audio['tbpm'] = str(round(bpm))
         audio['tkey'] = camelot_key
+        audio.save()
+        return True
+    except Exception:
+        return False
+
+# --- 5. ONLINE METADATA ---
+
+musicbrainzngs.set_useragent("HarmonicMixingStudio", "0.1", "https://github.com/yourname/yourrepo")
+
+def fetch_musicbrainz_release_id(file_path: Path) -> Optional[str]:
+    """Tries to find a MusicBrainz release ID for a given file."""
+    try:
+        audio = mutagen.File(file_path, easy=True)
+        if not audio:
+            return None
+
+        artist = audio.get('artist', [''])[0]
+        album = audio.get('album', [''])[0]
+
+        if not artist or not album:
+            return None
+
+        result = musicbrainzngs.search_releases(artist=artist, release=album, limit=1)
+        if result['release-list']:
+            return result['release-list'][0]['id']
+        return None
+    except Exception:
+        return None
+
+def download_cover_art(release_id: str) -> Optional[bytes]:
+    """Downloads the front cover art for a given MusicBrainz release ID."""
+    try:
+        # The Cover Art Archive uses the release ID directly
+        url = f"https://coverartarchive.org/release/{release_id}/front"
+        response = requests.get(url, allow_redirects=True, timeout=10)
+        # The API redirects to the actual image, so we don't need to check for 307
+        if response.status_code == 200:
+            return response.content
+        return None
+    except Exception:
+        return None
+
+def embed_cover_art(file_path: Path, image_data: bytes) -> bool:
+    """Embeds downloaded image data as cover art into an audio file."""
+    try:
+        audio = mutagen.File(file_path)
+        if audio is None:
+            return False
+
+        if file_path.suffix.lower() == '.mp3':
+            pic = mutagen.id3.APIC(
+                encoding=3,  # 3 is for utf-8
+                mime='image/jpeg', # or image/png
+                type=3,  # 3 is for the cover (front) image
+                desc='Cover',
+                data=image_data
+            )
+            audio.tags.add(pic)
+        elif file_path.suffix.lower() == '.flac':
+            pic = mutagen.flac.Picture()
+            pic.type = 3
+            pic.mime = 'image/jpeg'
+            pic.desc = 'Cover'
+            pic.data = image_data
+            audio.add_picture(pic)
+        else:
+            # Other formats might not be supported or require different handling
+            return False
+
         audio.save()
         return True
     except Exception:

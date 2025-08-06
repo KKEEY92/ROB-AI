@@ -22,6 +22,7 @@ class App(customtkinter.CTk):
         self.selected_track_path = None
         self.selected_playlist_name = None
         self.is_playing = False
+        self.current_track_rows = {} # To keep track of track row widgets
         self.waveform_cache_dir = "waveform_cache"
         if not os.path.exists(self.waveform_cache_dir):
             os.makedirs(self.waveform_cache_dir)
@@ -50,6 +51,9 @@ class App(customtkinter.CTk):
 
         self.playlist_button = customtkinter.CTkButton(self.control_frame, text="Create Playlist", state="disabled", command=self.create_playlist)
         self.playlist_button.pack(side="left", padx=10, pady=10)
+
+        self.update_metadata_button = customtkinter.CTkButton(self.control_frame, text="Update Metadata", state="disabled", command=self.start_metadata_fetch_thread)
+        self.update_metadata_button.pack(side="left", padx=10, pady=10)
 
         # --- Progress Bar and Labels ---
         self.progress_bar = customtkinter.CTkProgressBar(self.control_frame, orientation="horizontal")
@@ -160,20 +164,23 @@ class App(customtkinter.CTk):
         # --- Player Frame ---
         self.player_frame = customtkinter.CTkFrame(self, height=60)
         self.player_frame.grid(row=3, column=0, columnspan=2, padx=10, pady=(5, 10), sticky="ew")
-        self.player_frame.grid_columnconfigure(3, weight=1)
+        self.player_frame.grid_columnconfigure(4, weight=1)
+
+        self.cover_art_label = customtkinter.CTkLabel(self.player_frame, text="", width=48, height=48)
+        self.cover_art_label.grid(row=0, rowspan=2, column=0, padx=10, pady=5)
 
         self.play_pause_button = customtkinter.CTkButton(self.player_frame, text="Play", width=60, command=self.play_pause_track, state="disabled")
-        self.play_pause_button.grid(row=0, column=0, padx=(10,5), pady=5)
+        self.play_pause_button.grid(row=0, column=1, padx=(10,5), pady=5)
 
         self.stop_button = customtkinter.CTkButton(self.player_frame, text="Stop", width=60, command=self.stop_track, state="disabled")
-        self.stop_button.grid(row=0, column=1, padx=5, pady=5)
+        self.stop_button.grid(row=0, column=2, padx=5, pady=5)
 
         self.time_label = customtkinter.CTkLabel(self.player_frame, text="00:00 / 00:00")
-        self.time_label.grid(row=0, column=2, padx=5, pady=5)
+        self.time_label.grid(row=0, column=3, padx=5, pady=5)
 
         self.scrub_bar = customtkinter.CTkSlider(self.player_frame, from_=0, to=100, command=None)
         self.scrub_bar.set(0)
-        self.scrub_bar.grid(row=0, column=3, padx=10, pady=5, sticky="ew")
+        self.scrub_bar.grid(row=0, column=4, rowspan=2, padx=10, pady=5, sticky="ew")
 
         # --- Load initial data and display it ---
         self.load_app_library()
@@ -239,6 +246,8 @@ class App(customtkinter.CTk):
         for widget in self.track_list_frame.winfo_children():
             widget.destroy()
 
+        self.current_track_rows = {} # Reset the row mapping
+
         headers = ["Track Name", "BPM", "Key", "Loudness", "Brightness", "Waveform"]
         column_weights = [3, 1, 1, 1, 1, 4]
 
@@ -268,6 +277,8 @@ class App(customtkinter.CTk):
             track_frame.grid(row=i + 1, column=0, columnspan=len(headers), padx=5, pady=2, sticky="ew")
             for j, weight in enumerate(column_weights):
                 track_frame.grid_columnconfigure(j, weight=weight)
+
+            self.current_track_rows[file_path] = track_frame # Store reference to the frame
 
             if self.selected_track_path == file_path:
                 track_frame.configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
@@ -301,25 +312,30 @@ class App(customtkinter.CTk):
 
     def track_selected(self, file_path):
         """Handles the event when a track is selected from the list."""
+        # Deselect previous track
+        if self.selected_track_path and self.selected_track_path in self.current_track_rows:
+            self.current_track_rows[self.selected_track_path].configure(fg_color="transparent")
+
         self.selected_track_path = file_path
         self.load_track_for_playback(file_path)
+        self.display_cover_art(file_path)
+
+        # Select new track
+        if file_path in self.current_track_rows:
+            self.current_track_rows[file_path].configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
 
         # Enable action buttons
         self.playlist_button.configure(state="normal")
         self.start_conversion_button.configure(state="normal")
+        self.update_metadata_button.configure(state="normal")
 
         self.status_label.configure(text=f"Selected: {file_path.stem}")
         self.converter_track_label.configure(text=f"Selected Track: {file_path.name}")
-
 
         # If we are in a playlist view, enable editing buttons
         if self.selected_playlist_name:
             self.move_up_button.configure(state="normal")
             self.move_down_button.configure(state="normal")
-            self.update_track_list_display(self.library_data["playlists"][self.selected_playlist_name])
-        else:
-            # Redraw the main collection to show the highlight
-            self.update_track_list_display(self.library_data["collection"])
 
     def on_format_change(self, choice):
         """Disables the bitrate menu if the format is not mp3."""
@@ -463,6 +479,53 @@ class App(customtkinter.CTk):
                 self.update_playlists_display()
             else:
                 messagebox.showerror("Error", "Could not find the selected playlist to delete.")
+
+    def display_cover_art(self, file_path: str):
+        """Tries to load and display embedded cover art for a track."""
+        try:
+            audio = mutagen.File(file_path, easy=False)
+            if 'APIC:' in audio.tags:
+                artwork = audio.tags['APIC:'].data
+                from io import BytesIO
+                img = Image.open(BytesIO(artwork))
+                ctk_img = customtkinter.CTkImage(light_image=img, dark_image=img, size=(48, 48))
+                self.cover_art_label.configure(image=ctk_img)
+            else:
+                self.cover_art_label.configure(image=None) # Clear if no art
+        except Exception:
+            self.cover_art_label.configure(image=None) # Clear on error
+
+    def start_metadata_fetch_thread(self):
+        """Starts the online metadata fetch in a background thread."""
+        if not self.selected_track_path:
+            return
+
+        self.status_label.configure(text=f"Searching online for {self.selected_track_path.name}...")
+        self.update_metadata_button.configure(state="disabled")
+
+        fetch_thread = threading.Thread(target=self.run_metadata_fetch, daemon=True)
+        fetch_thread.start()
+
+    def run_metadata_fetch(self):
+        """The core metadata fetching loop."""
+        release_id = engine.fetch_musicbrainz_release_id(self.selected_track_path)
+        if release_id:
+            image_data = engine.download_cover_art(release_id)
+            if image_data:
+                success = engine.embed_cover_art(self.selected_track_path, image_data)
+                self.after(0, self.metadata_fetch_complete, success)
+                return
+
+        self.after(0, self.metadata_fetch_complete, False)
+
+    def metadata_fetch_complete(self, success: bool):
+        """Called on the main thread when metadata fetch is finished."""
+        self.update_metadata_button.configure(state="normal")
+        if success:
+            self.status_label.configure(text="Successfully updated cover art.")
+            self.display_cover_art(self.selected_track_path) # Refresh display
+        else:
+            self.status_label.configure(text="Could not find metadata online.")
 
     def start_conversion_thread(self):
         """Gathers settings and starts the conversion in a new thread."""
