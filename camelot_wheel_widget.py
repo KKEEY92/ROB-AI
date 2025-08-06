@@ -21,9 +21,13 @@ class CamelotWheel(customtkinter.CTkFrame):
             highlighted_keys = []
 
         self.canvas.delete("all")
-        center_x, center_y = 100, 100
-        outer_radius = 90
-        inner_radius = 50
+
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+
+        center_x, center_y = width / 2, height / 2
+        outer_radius = min(center_x, center_y) * 0.9
+        inner_radius = outer_radius * 0.55
 
         keys_b = [f"{i}B" for i in range(1, 13)] # Outer ring (Major)
         keys_a = [f"{i}A" for i in range(1, 13)] # Inner ring (Minor)
@@ -44,8 +48,9 @@ class CamelotWheel(customtkinter.CTkFrame):
             self.key_to_segment_id[key] = segment_id
 
             angle_text = math.radians(-angle_start - (angle_extent / 2))
-            text_x = center_x + (outer_radius - 15) * math.cos(angle_text)
-            text_y = center_y + (outer_radius - 15) * math.sin(angle_text)
+            text_radius = outer_radius * 0.85
+            text_x = center_x + text_radius * math.cos(angle_text)
+            text_y = center_y + text_radius * math.sin(angle_text)
             self.canvas.create_text(text_x, text_y, text=key, fill="white", font=("Arial", 10, "bold"), tags=key)
 
         # Draw inner ring (A keys)
@@ -62,8 +67,9 @@ class CamelotWheel(customtkinter.CTkFrame):
             self.key_to_segment_id[key] = segment_id
 
             angle_text = math.radians(-angle_start - (angle_extent / 2))
-            text_x = center_x + (inner_radius - 15) * math.cos(angle_text)
-            text_y = center_y + (inner_radius - 15) * math.sin(angle_text)
+            text_radius = inner_radius * 0.7
+            text_x = center_x + text_radius * math.cos(angle_text)
+            text_y = center_y + text_radius * math.sin(angle_text)
             self.canvas.create_text(text_x, text_y, text=key, fill="white", font=("Arial", 9), tags=key)
 
     def on_canvas_click(self, event):

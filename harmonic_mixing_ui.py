@@ -118,8 +118,9 @@ class App(customtkinter.CTk):
         self.start_conversion_button.pack(pady=20)
 
         # --- Navigation Pane ---
-        self.nav_pane = customtkinter.CTkFrame(self.library_tab, width=200, corner_radius=5)
+        self.nav_pane = customtkinter.CTkFrame(self.library_tab, width=240, corner_radius=5)
         self.nav_pane.grid(row=0, column=0, padx=10, pady=10, sticky="nsw")
+        self.nav_pane.pack_propagate(False) # Prevent the pane from shrinking to fit its contents
 
         self.nav_label = customtkinter.CTkLabel(self.nav_pane, text="Library", font=customtkinter.CTkFont(size=18, weight="bold"))
         self.nav_label.pack(pady=10, padx=20)
