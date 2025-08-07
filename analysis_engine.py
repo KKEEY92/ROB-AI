@@ -12,6 +12,7 @@ import musicbrainzngs
 import requests
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
 # --- 1. KONFIGURATION ---
 
@@ -116,6 +117,53 @@ def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str) -> boo
         audio['tbpm'] = str(round(bpm))
         audio['tkey'] = camelot_key
         audio.save()
+        return True
+    except Exception:
+        return False
+
+def generate_rgb_waveform(file_path: Path, image_path: Path, width: int = 800, height: int = 120):
+    """Generates a detailed, frequency-colored RGB waveform."""
+    try:
+        y, sr = librosa.load(str(file_path), sr=44100)
+        stft = np.abs(librosa.stft(y))
+
+        # Define frequency bands
+        bass_bins = librosa.fft_frequencies(sr=sr, n_fft=2048) < 250
+        mid_bins = (librosa.fft_frequencies(sr=sr, n_fft=2048) >= 250) & (librosa.fft_frequencies(sr=sr, n_fft=2048) < 4000)
+        high_bins = librosa.fft_frequencies(sr=sr, n_fft=2048) >= 4000
+
+        # Calculate energy in each band
+        bass_energy = np.mean(stft[bass_bins, :], axis=0)
+        mid_energy = np.mean(stft[mid_bins, :], axis=0)
+        high_energy = np.mean(stft[high_bins, :], axis=0)
+
+        # Normalize energies
+        def normalize(arr):
+            return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + 1e-6)
+
+        r = normalize(bass_energy)
+        g = normalize(mid_energy)
+        b = normalize(high_energy)
+
+        # Create image
+        img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        pixels = img.load()
+
+        num_frames = len(r)
+        for x in range(width):
+            frame_index = int(x * num_frames / width)
+
+            r_val = int(r[frame_index] * 255)
+            g_val = int(g[frame_index] * 255)
+            b_val = int(b[frame_index] * 255)
+
+            amplitude = (r[frame_index] + g[frame_index] + b[frame_index]) / 3
+            wave_height = int(amplitude * height / 2)
+
+            for y in range(-wave_height, wave_height):
+                pixels[x, (height // 2) + y] = (r_val, g_val, b_val, 255)
+
+        img.save(image_path, 'PNG')
         return True
     except Exception:
         return False

@@ -186,9 +186,9 @@ class App(customtkinter.CTk):
         self.time_label = customtkinter.CTkLabel(self.player_frame, text="00:00 / 00:00")
         self.time_label.grid(row=0, column=3, padx=5, pady=5)
 
-        self.scrub_bar = customtkinter.CTkSlider(self.player_frame, from_=0, to=100, command=None)
-        self.scrub_bar.set(0)
-        self.scrub_bar.grid(row=0, column=4, rowspan=2, padx=10, pady=5, sticky="ew")
+        self.player_waveform_label = customtkinter.CTkLabel(self.player_frame, text="", height=40)
+        self.player_waveform_label.grid(row=0, column=4, rowspan=2, padx=10, pady=5, sticky="ew")
+        self.player_waveform_label.bind("<Button-1>", self.seek_on_waveform_click)
 
         # --- Load initial data and display it ---
         self.load_app_library()
@@ -365,24 +365,53 @@ class App(customtkinter.CTk):
             self.bitrate_menu.configure(state="disabled")
 
     def load_track_for_playback(self, file_path):
-        """Loads a track into the pygame mixer."""
+        """Loads a track into the pygame mixer and generates its detailed waveform."""
         try:
-            self.stop_track() # Stop any currently playing track
+            self.stop_track()
             pygame.mixer.music.load(file_path)
 
-            # Get track length
             audio = pygame.mixer.Sound(file_path)
             self.track_length = audio.get_length()
 
-            self.scrub_bar.configure(to=self.track_length)
             self.time_label.configure(text=f"00:00 / {time.strftime('%M:%S', time.gmtime(self.track_length))}")
             self.play_pause_button.configure(state="normal")
             self.stop_button.configure(state="normal")
+
+            # Generate detailed waveform in background
+            self.player_waveform_label.configure(image=None, text="Generating Waveform...")
+            threading.Thread(target=self.generate_player_waveform, args=(file_path,), daemon=True).start()
+
         except Exception as e:
             self.play_pause_button.configure(state="disabled")
             self.stop_button.configure(state="disabled")
             self.time_label.configure(text="00:00 / 00:00")
             self.status_label.configure(text=f"Error loading track: {e}")
+
+    def generate_player_waveform(self, file_path, playhead_pos=None):
+        """Generates and displays the detailed player waveform, optionally with a playhead."""
+        try:
+            image_path = os.path.join(self.waveform_cache_dir, f"{file_path.stem}_player.png")
+            # Generate the base waveform only if it doesn't exist
+            if not os.path.exists(image_path):
+                engine.generate_rgb_waveform(file_path, image_path)
+
+            if os.path.exists(image_path):
+                img = Image.open(image_path).convert("RGBA")
+
+                if playhead_pos is not None:
+                    # Draw a vertical line for the playhead
+                    from PIL import ImageDraw
+                    draw = ImageDraw.Draw(img)
+                    x_pos = int(img.width * playhead_pos)
+                    draw.line([(x_pos, 0), (x_pos, img.height)], fill=(255, 255, 0, 255), width=2)
+
+                ctk_img = customtkinter.CTkImage(light_image=img, dark_image=img, size=(img.width, img.height))
+                self.player_waveform_label.configure(image=ctk_img, text="")
+            else:
+                self.player_waveform_label.configure(image=None, text="Waveform Error")
+        except Exception as e:
+            print(f"Error in generate_player_waveform: {e}")
+            self.player_waveform_label.configure(image=None, text="Waveform Error")
 
     def play_pause_track(self):
         """Toggles play/pause for the loaded track."""
@@ -401,8 +430,11 @@ class App(customtkinter.CTk):
         self.is_playing = False
         pygame.mixer.music.stop()
         self.play_pause_button.configure(text="Play")
-        self.scrub_bar.set(0)
         self.time_label.configure(text=f"00:00 / {time.strftime('%M:%S', time.gmtime(getattr(self, 'track_length', 0)))}")
+        # Reset the waveform to its original state without the playhead
+        if self.selected_track_path:
+            # Use after to ensure this runs on the main thread
+            self.after(0, self.generate_player_waveform, self.selected_track_path, None)
 
     def start_playback_progress_thread(self):
         """Starts the thread that updates the playback progress bar and time."""
@@ -410,19 +442,23 @@ class App(customtkinter.CTk):
         progress_thread.start()
 
     def update_playback_progress(self):
-        """Updates the scrub bar and time label while music is playing."""
+        """Updates the waveform with a playhead and the time label while music is playing."""
         while self.is_playing and pygame.mixer.music.get_busy():
-            current_pos = pygame.mixer.music.get_pos() / 1000  # get_pos is in milliseconds
-            self.scrub_bar.set(current_pos)
+            current_pos = pygame.mixer.music.get_pos() / 1000
+            if self.track_length > 0:
+                playhead_ratio = current_pos / self.track_length
+                # Schedule the waveform redraw on the main thread
+                self.after(0, self.generate_player_waveform, self.selected_track_path, playhead_ratio)
 
             current_time_str = time.strftime('%M:%S', time.gmtime(current_pos))
             total_time_str = time.strftime('%M:%S', time.gmtime(self.track_length))
-            self.time_label.configure(text=f"{current_time_str} / {total_time_str}")
+            self.after(0, self.time_label.configure, {"text": f"{current_time_str} / {total_time_str}"})
 
-            time.sleep(0.1)
+            time.sleep(0.1) # Update roughly 10 times a second
 
         if self.is_playing: # If the song finished naturally
-            self.stop_track()
+            self.is_playing = False # Prevent re-entry
+            self.after(0, self.stop_track)
 
     def create_playlist(self):
         """Prompts for a playlist name and saves the new harmonic playlist."""
@@ -691,6 +727,32 @@ class App(customtkinter.CTk):
             self.after(0, self.show_track_collection)
 
         self.after(0, self.analysis_complete)
+
+    def seek_on_waveform_click(self, event):
+        """Seeks to a position in the track when the waveform is clicked."""
+        if not hasattr(self, 'track_length') or self.track_length == 0:
+            return
+
+        # Calculate the click position as a fraction of the widget's width
+        click_x = event.x
+        widget_width = self.player_waveform_label.winfo_width()
+        seek_ratio = click_x / widget_width
+
+        # Ensure the ratio is within bounds [0, 1]
+        seek_ratio = max(0, min(1, seek_ratio))
+
+        # Calculate the seek time in seconds
+        seek_time_seconds = self.track_length * seek_ratio
+
+        # Seek the music
+        pygame.mixer.music.set_pos(seek_time_seconds)
+
+        # If paused, we need to update the time label manually
+        if not self.is_playing:
+            current_time_str = time.strftime('%M:%S', time.gmtime(seek_time_seconds))
+            total_time_str = time.strftime('%M:%S', time.gmtime(self.track_length))
+            self.time_label.configure(text=f"{current_time_str} / {total_time_str}")
+
 
     def analysis_complete(self):
         """Called on the main thread when analysis is finished."""
