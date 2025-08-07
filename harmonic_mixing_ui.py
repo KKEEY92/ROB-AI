@@ -3,11 +3,12 @@ import tkinter
 from tkinter import filedialog, messagebox
 from PIL import Image
 import analysis_engine as engine
-from camelot_wheel_widget import CamelotWheel
 import threading
 import time
 import os
 import pygame
+import requests
+from io import BytesIO
 
 # Set the theme and color scheme for the application
 customtkinter.set_appearance_mode("Dark")
@@ -146,9 +147,10 @@ class App(customtkinter.CTk):
         self.move_down_button = customtkinter.CTkButton(self.nav_pane, text="Move Track Down", state="disabled", command=self.move_track_down)
         self.move_down_button.pack(pady=5, padx=10, fill="x")
 
-        # --- Add Camelot Wheel ---
-        self.camelot_wheel = CamelotWheel(self.nav_pane)
-        self.camelot_wheel.pack(pady=20, padx=10, fill="x", side="bottom")
+        # --- Add Camelot Wheel Image ---
+        self.camelot_wheel_label = customtkinter.CTkLabel(self.nav_pane, text="")
+        self.camelot_wheel_label.pack(pady=20, padx=10, fill="x", side="bottom")
+        self.load_camelot_image()
 
         # --- Content Pane (for the track list) ---
         self.content_pane = customtkinter.CTkFrame(self.library_tab, corner_radius=5)
@@ -191,6 +193,18 @@ class App(customtkinter.CTk):
         # --- Load initial data and display it ---
         self.load_app_library()
         self.show_track_collection()
+
+    def load_camelot_image(self):
+        """Loads the camelot wheel image from a URL."""
+        try:
+            url = "https://www.dj-blog.com/wp-content/uploads/2013/11/camelot-wheel-900x900.jpg"
+            response = requests.get(url)
+            img_data = response.content
+            img = Image.open(BytesIO(img_data))
+            ctk_img = customtkinter.CTkImage(light_image=img, dark_image=img, size=(200, 200))
+            self.camelot_wheel_label.configure(image=ctk_img)
+        except Exception as e:
+            self.camelot_wheel_label.configure(text="Could not load\nCamelot Wheel image.")
 
     def load_app_library(self):
         """Loads the library from the JSON file on startup."""
