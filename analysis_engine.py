@@ -1,18 +1,22 @@
-import os
 import json
+import os
 from pathlib import Path
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Dict, Any
+
 import librosa
-import soundfile as sf
-import pyloudnorm as pyln
-from pydub import AudioSegment
-import mutagen
-from mutagen.easyid3 import EasyID3
-import musicbrainzngs
-import requests
+import librosa.feature
 import matplotlib.pyplot as plt
+import musicbrainzngs
+import mutagen
 import numpy as np
+import pyloudnorm as pyln
+import requests
+import soundfile as sf
 from PIL import Image
+from mutagen.easyid3 import EasyID3
+from mutagen.flac import Picture
+from mutagen.id3 import APIC
+from pydub import AudioSegment
 
 # --- 1. KONFIGURATION ---
 
@@ -39,6 +43,7 @@ CAMELOT_COLOR_MAP = {
 
 # --- 2. FUNKTIONEN ---
 
+
 def find_music_files(music_folder: str) -> List[Path]:
     """Durchsucht einen Ordner rekursiv nach unterstützten Audiodateien."""
     found_files = []
@@ -47,6 +52,7 @@ def find_music_files(music_folder: str) -> List[Path]:
             if Path(file).suffix.lower() in SUPPORTED_FILES:
                 found_files.append(Path(root) / file)
     return found_files
+
 
 def analyze_track_full(file_path: Path) -> Optional[Dict[str, Any]]:
     """
@@ -82,12 +88,15 @@ def analyze_track_full(file_path: Path) -> Optional[Dict[str, Any]]:
             "loudness": loudness,
             "brightness": spectral_centroid
         }
-    except Exception:
+    except (IOError, RuntimeError) as e:
+        print(f"Error analyzing track {file_path}: {e}")
         return None
+
 
 def get_camelot_key(key: str) -> Optional[str]:
     """Übersetzt eine Tonart in einen Camelot-Code."""
     return SIMPLE_CAMELOT_MAP.get(key)
+
 
 def get_compatible_keys(camelot_key: str) -> List[str]:
     """Ermittelt harmonisch kompatible Tonarten basierend auf dem Camelot-Rad."""
@@ -108,6 +117,7 @@ def get_compatible_keys(camelot_key: str) -> List[str]:
     compatible_keys.append(f"{prev_number}{letter}")
     return list(set(compatible_keys))
 
+
 def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str) -> bool:
     """Schreibt BPM und Camelot-Key in die Metadaten einer MP3-Datei."""
     if file_path.suffix.lower() != '.mp3':
@@ -118,8 +128,10 @@ def write_metadata_to_file(file_path: Path, bpm: float, camelot_key: str) -> boo
         audio['tkey'] = camelot_key
         audio.save()
         return True
-    except Exception:
+    except (IOError, mutagen.MutagenError) as e:
+        print(f"Error writing metadata to {file_path}: {e}")
         return False
+
 
 def generate_rgb_waveform(file_path: Path, image_path: Path, width: int = 800, height: int = 120):
     """Generates a detailed, frequency-colored RGB waveform."""
@@ -138,7 +150,7 @@ def generate_rgb_waveform(file_path: Path, image_path: Path, width: int = 800, h
         high_energy = np.mean(stft[high_bins, :], axis=0)
 
         # Normalize energies
-        def normalize(arr):
+        def normalize(arr: np.ndarray) -> np.ndarray:
             return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + 1e-6)
 
         r = normalize(bass_energy)
@@ -160,17 +172,20 @@ def generate_rgb_waveform(file_path: Path, image_path: Path, width: int = 800, h
             amplitude = (r[frame_index] + g[frame_index] + b[frame_index]) / 3
             wave_height = int(amplitude * height / 2)
 
-            for y in range(-wave_height, wave_height):
-                pixels[x, (height // 2) + y] = (r_val, g_val, b_val, 255)
+            for y_pos in range(-wave_height, wave_height):
+                pixels[x, (height // 2) + y_pos] = (r_val, g_val, b_val, 255)
 
         img.save(image_path, 'PNG')
         return True
-    except Exception:
+    except (IOError, RuntimeError) as e:
+        print(f"Error generating RGB waveform for {file_path}: {e}")
         return False
 
 # --- 5. ONLINE METADATA ---
 
+
 musicbrainzngs.set_useragent("HarmonicMixingStudio", "0.1", "https://github.com/yourname/yourrepo")
+
 
 def fetch_musicbrainz_release_id(file_path: Path) -> Optional[str]:
     """Tries to find a MusicBrainz release ID for a given file."""
@@ -189,8 +204,10 @@ def fetch_musicbrainz_release_id(file_path: Path) -> Optional[str]:
         if result['release-list']:
             return result['release-list'][0]['id']
         return None
-    except Exception:
+    except (mutagen.MutagenError, musicbrainzngs.MusicBrainzError) as e:
+        print(f"Error fetching MusicBrainz ID for {file_path}: {e}")
         return None
+
 
 def download_cover_art(release_id: str) -> Optional[bytes]:
     """Downloads the front cover art for a given MusicBrainz release ID."""
@@ -202,8 +219,10 @@ def download_cover_art(release_id: str) -> Optional[bytes]:
         if response.status_code == 200:
             return response.content
         return None
-    except Exception:
+    except requests.RequestException as e:
+        print(f"Error downloading cover art for release {release_id}: {e}")
         return None
+
 
 def embed_cover_art(file_path: Path, image_data: bytes) -> bool:
     """Embeds downloaded image data as cover art into an audio file."""
@@ -213,16 +232,16 @@ def embed_cover_art(file_path: Path, image_data: bytes) -> bool:
             return False
 
         if file_path.suffix.lower() == '.mp3':
-            pic = mutagen.id3.APIC(
+            pic = APIC(
                 encoding=3,  # 3 is for utf-8
-                mime='image/jpeg', # or image/png
+                mime='image/jpeg',  # or image/png
                 type=3,  # 3 is for the cover (front) image
                 desc='Cover',
                 data=image_data
             )
             audio.tags.add(pic)
         elif file_path.suffix.lower() == '.flac':
-            pic = mutagen.flac.Picture()
+            pic = Picture()
             pic.type = 3
             pic.mime = 'image/jpeg'
             pic.desc = 'Cover'
@@ -234,12 +253,15 @@ def embed_cover_art(file_path: Path, image_data: bytes) -> bool:
 
         audio.save()
         return True
-    except Exception:
+    except (IOError, mutagen.MutagenError) as e:
+        print(f"Error embedding cover art in {file_path}: {e}")
         return False
 
 # --- 4. AUDIO CONVERSION ---
 
-def convert_audio(source_path: Path, output_path: Path, format: str, sample_rate: int, bitrate: Optional[str], channels: int) -> bool:
+
+def convert_audio(source_path: Path, output_path: Path, output_format: str, sample_rate: int, bitrate: Optional[str],
+                  channels: int) -> bool:
     """
     Converts an audio file to a different format with specified parameters.
     """
@@ -256,18 +278,19 @@ def convert_audio(source_path: Path, output_path: Path, format: str, sample_rate
 
         # Prepare export parameters
         export_params = {}
-        if format == 'mp3' and bitrate is not None:
+        if output_format == 'mp3' and bitrate is not None:
             export_params['bitrate'] = bitrate
 
         # Export the file
-        audio.export(output_path, format=format, parameters=export_params)
+        audio.export(output_path, format=output_format, parameters=export_params)
 
         return True
     except Exception as e:
-        print(f"Error during conversion: {e}") # For debugging
+        print(f"Error during conversion: {e}")  # For debugging
         return False
 
 # --- 3. LIBRARY PERSISTENCE ---
+
 
 def save_library(library_data: Dict[str, Any], file_path: str):
     """Saves the library data to a JSON file."""
@@ -285,8 +308,10 @@ def save_library(library_data: Dict[str, Any], file_path: str):
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(convert_paths_to_strings(library_data), f, indent=4)
         return True
-    except Exception:
+    except (IOError, TypeError) as e:
+        print(f"Error saving library to {file_path}: {e}")
         return False
+
 
 def load_library(file_path: str) -> Dict[str, Any]:
     """Loads the library data from a JSON file."""
@@ -307,6 +332,7 @@ def load_library(file_path: str) -> Dict[str, Any]:
     except (FileNotFoundError, json.JSONDecodeError):
         # If file doesn't exist or is empty/corrupt, return a default structure
         return {"collection": [], "playlists": {}}
+
 
 def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max_bpm_diff: int = 5) -> Optional[List[Dict]]:
     """Erstellt eine harmonische Playlist und gibt die sortierte Track-Liste zurück."""
@@ -336,10 +362,11 @@ def create_harmonic_playlist(all_tracks: List[dict], start_track_path: Path, max
 
     return playlist
 
+
 def export_playlist_to_m3u(playlist_name: str, tracks: List[Dict]) -> bool:
     """Exportiert eine Track-Liste in eine .m3u-Datei."""
     # Sanitize playlist name for use as a filename
-    safe_filename = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+    safe_filename = "".join([c for c in playlist_name if c.isalpha() or c.isdigit() or c == ' ']).rstrip()
     if not safe_filename:
         safe_filename = "Untitled Playlist"
     playlist_filename = f"{safe_filename}.m3u"
@@ -352,8 +379,10 @@ def export_playlist_to_m3u(playlist_name: str, tracks: List[Dict]) -> bool:
                 f.write(f"#EXTINF:-1,{title}\n")
                 f.write(str(track['path'].resolve()) + '\n')
         return True
-    except Exception:
+    except IOError as e:
+        print(f"Error exporting playlist to {playlist_filename}: {e}")
         return False
+
 
 def generate_waveform_image(file_path: Path, image_path: Path, color: str = "#1f6aa5"):
     """Generates a simple waveform image from an audio file."""
@@ -386,5 +415,6 @@ def generate_waveform_image(file_path: Path, image_path: Path, color: str = "#1f
         plt.close(fig)
 
         return True
-    except Exception:
+    except (IOError, RuntimeError) as e:
+        print(f"Error generating waveform image for {file_path}: {e}")
         return False

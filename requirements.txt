@@ -1,0 +1,12 @@
+customtkinter
+pillow
+pygame
+requests
+mutagen
+numpy
+librosa
+soundfile
+pyloudnorm
+musicbrainzngs
+matplotlib
+pydub
