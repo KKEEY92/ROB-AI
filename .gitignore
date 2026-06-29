@@ -4,3 +4,11 @@
 .env.local
 .env.*
 !.env.example
+
+# IDE
+.idea/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
